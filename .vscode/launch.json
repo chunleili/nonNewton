@@ -1,7 +1,14 @@
 {
     "version": "0.2.0",
     "configurations": [
-        
+        {
+            "name": "调试SPH",
+            "type": "python",
+            "request": "launch",
+            "program": "SPH/main.py",
+            "console": "integratedTerminal",
+            "args": [ ]
+        },
         {
             "name": "调试MPM",
             "type": "python",
