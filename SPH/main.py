@@ -9,10 +9,11 @@ from functools import reduce
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
 sph_root_path = os.path.dirname(__file__)
+
+
 # ---------------------------------------------------------------------------- #
 #                                particle system                               #
 # ---------------------------------------------------------------------------- #
-
 @ti.data_oriented
 class ParticleSystem:
     def __init__(self, config, GGUI=False):
@@ -24,7 +25,7 @@ class ParticleSystem:
 
         self.domain_end = np.array([1.0, 1.0, 1.0])
         self.domian_end = np.array(self.cfg.get_cfg("domainEnd"))
-        
+
         self.domain_size = self.domian_end - self.domain_start
 
         self.dim = len(self.domain_size)
@@ -41,7 +42,7 @@ class ParticleSystem:
 
         self.particle_diameter = 2 * self.particle_radius
         self.support_radius = self.particle_radius * 4.0  # support radius
-        self.m_V0 = 0.8 * self.particle_diameter ** self.dim
+        self.m_V0 = 0.8 * self.particle_diameter**self.dim
 
         self.particle_num = ti.field(int, shape=())
 
@@ -55,7 +56,7 @@ class ParticleSystem:
         self.object_collection = dict()
         self.object_id_rigid_body = set()
 
-        #========== Compute number of particles ==========#
+        # ========== Compute number of particles ==========#
         #### Process Fluid Blocks ####
         fluid_blocks = self.cfg.get_fluid_blocks()
         fluid_particle_num = 0
@@ -73,7 +74,7 @@ class ParticleSystem:
             rigid["particleNum"] = particle_num
             self.object_collection[rigid["objectId"]] = rigid
             rigid_particle_num += particle_num
-        
+
         #### Process Rigid Bodies ####
         rigid_bodies = self.cfg.get_rigid_bodies()
         for rigid_body in rigid_bodies:
@@ -82,25 +83,25 @@ class ParticleSystem:
             rigid_body["voxelizedPoints"] = voxelized_points_np
             self.object_collection[rigid_body["objectId"]] = rigid_body
             rigid_particle_num += voxelized_points_np.shape[0]
-        
+
         self.fluid_particle_num = fluid_particle_num
         self.solid_particle_num = rigid_particle_num
         self.particle_max_num = fluid_particle_num + rigid_particle_num
-        self.num_rigid_bodies = len(rigid_blocks)+len(rigid_bodies)
+        self.num_rigid_bodies = len(rigid_blocks) + len(rigid_bodies)
 
         #### TODO: Handle the Particle Emitter ####
         # self.particle_max_num += emitted particles
         print(f"Current particle num: {self.particle_num[None]}, Particle max num: {self.particle_max_num}")
 
-        #========== Allocate memory ==========#
+        # ========== Allocate memory ==========#
         # Rigid body properties
         if self.num_rigid_bodies > 0:
             # TODO: Here we actually only need to store rigid boides, however the object id of rigid may not start from 0, so allocate center of mass for all objects
             self.rigid_rest_cm = ti.Vector.field(self.dim, dtype=float, shape=self.num_rigid_bodies + len(fluid_blocks))
 
         # Particle num of each grid
-        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0]*self.grid_num[1]*self.grid_num[2]))
-        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0]*self.grid_num[1]*self.grid_num[2]))
+        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
+        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
 
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
@@ -150,8 +151,7 @@ class ParticleSystem:
             self.x_vis_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
             self.color_vis_buffer = ti.Vector.field(3, dtype=float, shape=self.particle_max_num)
 
-
-        #========== Initialize particles ==========#
+        # ========== Initialize particles ==========#
 
         # Fluid block
         for fluid in fluid_blocks:
@@ -163,15 +163,17 @@ class ParticleSystem:
             velocity = fluid["velocity"]
             density = fluid["density"]
             color = fluid["color"]
-            self.add_cube(object_id=obj_id,
-                          lower_corner=start,
-                          cube_size=(end-start)*scale,
-                          velocity=velocity,
-                          density=density, 
-                          is_dynamic=1, # enforce fluid dynamic
-                          color=color,
-                          material=1) # 1 indicates fluid
-        
+            self.add_cube(
+                object_id=obj_id,
+                lower_corner=start,
+                cube_size=(end - start) * scale,
+                velocity=velocity,
+                density=density,
+                is_dynamic=1,  # enforce fluid dynamic
+                color=color,
+                material=1,
+            )  # 1 indicates fluid
+
         # TODO: Handle rigid block
         # Rigid block
         for rigid in rigid_blocks:
@@ -184,14 +186,16 @@ class ParticleSystem:
             density = rigid["density"]
             color = rigid["color"]
             is_dynamic = rigid["isDynamic"]
-            self.add_cube(object_id=obj_id,
-                          lower_corner=start,
-                          cube_size=(end-start)*scale,
-                          velocity=velocity,
-                          density=density, 
-                          is_dynamic=is_dynamic,
-                          color=color,
-                          material=0) # 1 indicates solid
+            self.add_cube(
+                object_id=obj_id,
+                lower_corner=start,
+                cube_size=(end - start) * scale,
+                velocity=velocity,
+                density=density,
+                is_dynamic=is_dynamic,
+                color=color,
+                material=0,
+            )  # 1 indicates solid
 
         # Rigid bodies
         for rigid_body in rigid_bodies:
@@ -206,16 +210,17 @@ class ParticleSystem:
                 velocity = np.array([0.0 for _ in range(self.dim)], dtype=np.float32)
             density = rigid_body["density"]
             color = np.array(rigid_body["color"], dtype=np.int32)
-            self.add_particles(obj_id,
-                               num_particles_obj,
-                               np.array(voxelized_points_np, dtype=np.float32), # position
-                               np.stack([velocity for _ in range(num_particles_obj)]), # velocity
-                               density * np.ones(num_particles_obj, dtype=np.float32), # density
-                               np.zeros(num_particles_obj, dtype=np.float32), # pressure
-                               np.array([0 for _ in range(num_particles_obj)], dtype=np.int32), # material is solid
-                               is_dynamic * np.ones(num_particles_obj, dtype=np.int32), # is_dynamic
-                               np.stack([color for _ in range(num_particles_obj)])) # color
-    
+            self.add_particles(
+                obj_id,
+                num_particles_obj,
+                np.array(voxelized_points_np, dtype=np.float32),  # position
+                np.stack([velocity for _ in range(num_particles_obj)]),  # velocity
+                density * np.ones(num_particles_obj, dtype=np.float32),  # density
+                np.zeros(num_particles_obj, dtype=np.float32),  # pressure
+                np.array([0 for _ in range(num_particles_obj)], dtype=np.int32),  # material is solid
+                is_dynamic * np.ones(num_particles_obj, dtype=np.int32),  # is_dynamic
+                np.stack([color for _ in range(num_particles_obj)]),
+            )  # color
 
     def build_solver(self):
         solver_type = self.cfg.get_cfg("simulationMethod")
@@ -239,80 +244,82 @@ class ParticleSystem:
         self.material[p] = material
         self.is_dynamic[p] = is_dynamic
         self.color[p] = color
-    
-    def add_particles(self,
-                      object_id: int,
-                      new_particles_num: int,
-                      new_particles_positions: ti.types.ndarray(),
-                      new_particles_velocity: ti.types.ndarray(),
-                      new_particle_density: ti.types.ndarray(),
-                      new_particle_pressure: ti.types.ndarray(),
-                      new_particles_material: ti.types.ndarray(),
-                      new_particles_is_dynamic: ti.types.ndarray(),
-                      new_particles_color: ti.types.ndarray()
-                      ):
-        
-        self._add_particles(object_id,
-                      new_particles_num,
-                      new_particles_positions,
-                      new_particles_velocity,
-                      new_particle_density,
-                      new_particle_pressure,
-                      new_particles_material,
-                      new_particles_is_dynamic,
-                      new_particles_color
-                      )
+
+    def add_particles(
+        self,
+        object_id: int,
+        new_particles_num: int,
+        new_particles_positions: ti.types.ndarray(),
+        new_particles_velocity: ti.types.ndarray(),
+        new_particle_density: ti.types.ndarray(),
+        new_particle_pressure: ti.types.ndarray(),
+        new_particles_material: ti.types.ndarray(),
+        new_particles_is_dynamic: ti.types.ndarray(),
+        new_particles_color: ti.types.ndarray(),
+    ):
+        self._add_particles(
+            object_id,
+            new_particles_num,
+            new_particles_positions,
+            new_particles_velocity,
+            new_particle_density,
+            new_particle_pressure,
+            new_particles_material,
+            new_particles_is_dynamic,
+            new_particles_color,
+        )
 
     @ti.kernel
-    def _add_particles(self,
-                      object_id: int,
-                      new_particles_num: int,
-                      new_particles_positions: ti.types.ndarray(),
-                      new_particles_velocity: ti.types.ndarray(),
-                      new_particle_density: ti.types.ndarray(),
-                      new_particle_pressure: ti.types.ndarray(),
-                      new_particles_material: ti.types.ndarray(),
-                      new_particles_is_dynamic: ti.types.ndarray(),
-                      new_particles_color: ti.types.ndarray()):
+    def _add_particles(
+        self,
+        object_id: int,
+        new_particles_num: int,
+        new_particles_positions: ti.types.ndarray(),
+        new_particles_velocity: ti.types.ndarray(),
+        new_particle_density: ti.types.ndarray(),
+        new_particle_pressure: ti.types.ndarray(),
+        new_particles_material: ti.types.ndarray(),
+        new_particles_is_dynamic: ti.types.ndarray(),
+        new_particles_color: ti.types.ndarray(),
+    ):
         for p in range(self.particle_num[None], self.particle_num[None] + new_particles_num):
             v = ti.Vector.zero(float, self.dim)
             x = ti.Vector.zero(float, self.dim)
             for d in ti.static(range(self.dim)):
                 v[d] = new_particles_velocity[p - self.particle_num[None], d]
                 x[d] = new_particles_positions[p - self.particle_num[None], d]
-            self.add_particle(p, object_id, x, v,
-                              new_particle_density[p - self.particle_num[None]],
-                              new_particle_pressure[p - self.particle_num[None]],
-                              new_particles_material[p - self.particle_num[None]],
-                              new_particles_is_dynamic[p - self.particle_num[None]],
-                              ti.Vector([new_particles_color[p - self.particle_num[None], i] for i in range(3)])
-                              )
+            self.add_particle(
+                p,
+                object_id,
+                x,
+                v,
+                new_particle_density[p - self.particle_num[None]],
+                new_particle_pressure[p - self.particle_num[None]],
+                new_particles_material[p - self.particle_num[None]],
+                new_particles_is_dynamic[p - self.particle_num[None]],
+                ti.Vector([new_particles_color[p - self.particle_num[None], i] for i in range(3)]),
+            )
         self.particle_num[None] += new_particles_num
-
 
     @ti.func
     def pos_to_index(self, pos):
         return (pos / self.grid_size).cast(int)
 
-
     @ti.func
     def flatten_grid_index(self, grid_index):
         return grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
-    
+
     @ti.func
     def get_flatten_grid_index(self, pos):
         return self.flatten_grid_index(self.pos_to_index(pos))
-    
 
     @ti.func
     def is_static_rigid_body(self, p):
         return self.material[p] == self.material_solid and (not self.is_dynamic[p])
 
-
     @ti.func
     def is_dynamic_rigid_body(self, p):
         return self.material[p] == self.material_solid and self.is_dynamic[p]
-    
 
     @ti.kernel
     def update_grid_id(self):
@@ -324,7 +331,7 @@ class ParticleSystem:
             ti.atomic_add(self.grid_particles_num[grid_index], 1)
         for I in ti.grouped(self.grid_particles_num):
             self.grid_particles_num_temp[I] = self.grid_particles_num[I]
-    
+
     @ti.kernel
     def counting_sort(self):
         # FIXME: make it the actual particle num
@@ -332,7 +339,7 @@ class ParticleSystem:
             I = self.particle_max_num - 1 - i
             base_offset = 0
             if self.grid_ids[I] - 1 >= 0:
-                base_offset = self.grid_particles_num[self.grid_ids[I]-1]
+                base_offset = self.grid_particles_num[self.grid_ids[I] - 1]
             self.grid_ids_new[I] = ti.atomic_sub(self.grid_particles_num_temp[self.grid_ids[I]], 1) - 1 + base_offset
 
         for I in ti.grouped(self.grid_ids):
@@ -354,7 +361,7 @@ class ParticleSystem:
             if ti.static(self.simulation_method == 4):
                 self.dfsph_factor_buffer[new_index] = self.dfsph_factor[I]
                 self.density_adv_buffer[new_index] = self.density_adv[I]
-        
+
         for I in ti.grouped(self.x):
             self.grid_ids[I] = self.grid_ids_buffer[I]
             self.object_id[I] = self.object_id_buffer[I]
@@ -373,20 +380,18 @@ class ParticleSystem:
             if ti.static(self.simulation_method == 4):
                 self.dfsph_factor[I] = self.dfsph_factor_buffer[I]
                 self.density_adv[I] = self.density_adv_buffer[I]
-    
 
     def initialize_particle_system(self):
         self.update_grid_id()
         self.prefix_sum_executor.run(self.grid_particles_num)
         self.counting_sort()
-    
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(self.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * self.dim)):
             grid_index = self.flatten_grid_index(center_cell + offset)
-            for p_j in range(self.grid_particles_num[ti.max(0, grid_index-1)], self.grid_particles_num[grid_index]):
+            for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
 
@@ -394,7 +399,7 @@ class ParticleSystem:
     def copy_to_numpy(self, np_arr: ti.types.ndarray(), src_arr: ti.template()):
         for i in range(self.particle_num[None]):
             np_arr[i] = src_arr[i]
-    
+
     def copy_to_vis_buffer(self, invisible_objects=[]):
         if len(invisible_objects) != 0:
             self.x_vis_buffer.fill(0.0)
@@ -418,16 +423,12 @@ class ParticleSystem:
         np_x = self.x.to_numpy()[mask]
         np_v = self.v.to_numpy()[mask]
 
-        return {
-            'position': np_x,
-            'velocity': np_v
-        }
-    
+        return {"position": np_x, "velocity": np_v}
 
     def load_rigid_body(self, rigid_body):
         obj_id = rigid_body["objectId"]
         # mesh = tm.load(rigid_body["geometryFile"])
-        mesh = tm.load(sph_root_path+rigid_body["geometryFile"])
+        mesh = tm.load(sph_root_path + rigid_body["geometryFile"])
         mesh.apply_scale(rigid_body["scale"])
         offset = np.array(rigid_body["translation"])
 
@@ -436,58 +437,49 @@ class ParticleSystem:
         rot_matrix = tm.transformations.rotation_matrix(angle, direction, mesh.vertices.mean(axis=0))
         mesh.apply_transform(rot_matrix)
         mesh.vertices += offset
-        
+
         # Backup the original mesh for exporting obj
         mesh_backup = mesh.copy()
         rigid_body["mesh"] = mesh_backup
         rigid_body["restPosition"] = mesh_backup.vertices
         rigid_body["restCenterOfMass"] = mesh_backup.vertices.mean(axis=0)
         is_success = tm.repair.fill_holes(mesh)
-            # print("Is the mesh successfully repaired? ", is_success)
+        # print("Is the mesh successfully repaired? ", is_success)
         voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter)
         voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter).fill()
         # voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter).hollow()
         # voxelized_mesh.show()
         voxelized_points_np = voxelized_mesh.points
         print(f"rigid body {obj_id} num: {voxelized_points_np.shape[0]}")
-        
-        return voxelized_points_np
 
+        return voxelized_points_np
 
     def compute_cube_particle_num(self, start, end):
         num_dim = []
         for i in range(self.dim):
-            num_dim.append(
-                np.arange(start[i], end[i], self.particle_diameter))
-        return reduce(lambda x, y: x * y,
-                                   [len(n) for n in num_dim])
+            num_dim.append(np.arange(start[i], end[i], self.particle_diameter))
+        return reduce(lambda x, y: x * y, [len(n) for n in num_dim])
 
-    def add_cube(self,
-                 object_id,
-                 lower_corner,
-                 cube_size,
-                 material,
-                 is_dynamic,
-                 color=(0,0,0),
-                 density=None,
-                 pressure=None,
-                 velocity=None):
-
+    def add_cube(
+        self,
+        object_id,
+        lower_corner,
+        cube_size,
+        material,
+        is_dynamic,
+        color=(0, 0, 0),
+        density=None,
+        pressure=None,
+        velocity=None,
+    ):
         num_dim = []
         for i in range(self.dim):
-            num_dim.append(
-                np.arange(lower_corner[i], lower_corner[i] + cube_size[i],
-                          self.particle_diameter))
-        num_new_particles = reduce(lambda x, y: x * y,
-                                   [len(n) for n in num_dim])
-        print('particle num ', num_new_particles)
+            num_dim.append(np.arange(lower_corner[i], lower_corner[i] + cube_size[i], self.particle_diameter))
+        num_new_particles = reduce(lambda x, y: x * y, [len(n) for n in num_dim])
+        print("particle num ", num_new_particles)
 
-        new_positions = np.array(np.meshgrid(*num_dim,
-                                             sparse=False,
-                                             indexing='ij'),
-                                 dtype=np.float32)
-        new_positions = new_positions.reshape(-1,
-                                              reduce(lambda x, y: x * y, list(new_positions.shape[1:]))).transpose()
+        new_positions = np.array(np.meshgrid(*num_dim, sparse=False, indexing="ij"), dtype=np.float32)
+        new_positions = new_positions.reshape(-1, reduce(lambda x, y: x * y, list(new_positions.shape[1:]))).transpose()
         print("new position shape ", new_positions.shape)
         if velocity is None:
             velocity_arr = np.full_like(new_positions, 0, dtype=np.float32)
@@ -497,9 +489,23 @@ class ParticleSystem:
         material_arr = np.full_like(np.zeros(num_new_particles, dtype=np.int32), material)
         is_dynamic_arr = np.full_like(np.zeros(num_new_particles, dtype=np.int32), is_dynamic)
         color_arr = np.stack([np.full_like(np.zeros(num_new_particles, dtype=np.int32), c) for c in color], axis=1)
-        density_arr = np.full_like(np.zeros(num_new_particles, dtype=np.float32), density if density is not None else 1000.)
-        pressure_arr = np.full_like(np.zeros(num_new_particles, dtype=np.float32), pressure if pressure is not None else 0.)
-        self.add_particles(object_id, num_new_particles, new_positions, velocity_arr, density_arr, pressure_arr, material_arr, is_dynamic_arr, color_arr)
+        density_arr = np.full_like(
+            np.zeros(num_new_particles, dtype=np.float32), density if density is not None else 1000.0
+        )
+        pressure_arr = np.full_like(
+            np.zeros(num_new_particles, dtype=np.float32), pressure if pressure is not None else 0.0
+        )
+        self.add_particles(
+            object_id,
+            num_new_particles,
+            new_positions,
+            velocity_arr,
+            density_arr,
+            pressure_arr,
+            material_arr,
+            is_dynamic_arr,
+            color_arr,
+        )
 
 
 # ---------------------------------------------------------------------------- #
@@ -511,7 +517,7 @@ class SimConfig:
         with open(scene_file_path, "r") as f:
             self.config = json.load(f)
         print(self.config)
-    
+
     def get_cfg(self, name, enforce_exist=False):
         if enforce_exist:
             assert name in self.config["Configuration"]
@@ -521,28 +527,30 @@ class SimConfig:
             else:
                 return None
         return self.config["Configuration"][name]
-    
+
     def get_rigid_bodies(self):
         if "RigidBodies" in self.config:
             return self.config["RigidBodies"]
         else:
             return []
-    
+
     def get_rigid_blocks(self):
         if "RigidBlocks" in self.config:
             return self.config["RigidBlocks"]
         else:
             return []
-    
+
     def get_fluid_blocks(self):
         if "FluidBlocks" in self.config:
             return self.config["FluidBlocks"]
         else:
             return []
 
+
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
 # ---------------------------------------------------------------------------- #
+
 
 @ti.data_oriented
 class SPHBase:
@@ -573,7 +581,7 @@ class SPHBase:
             k = 40 / 7 / np.pi
         elif self.ps.dim == 3:
             k = 8 / np.pi
-        k /= h ** self.ps.dim
+        k /= h**self.ps.dim
         q = r_norm / h
         if q <= 1.0:
             if q <= 0.5:
@@ -595,7 +603,7 @@ class SPHBase:
             k = 40 / 7 / np.pi
         elif self.ps.dim == 3:
             k = 8 / np.pi
-        k = 6. * k / h ** self.ps.dim
+        k = 6.0 * k / h**self.ps.dim
         r_norm = r.norm()
         q = r_norm / h
         res = ti.Vector([0.0 for _ in range(self.ps.dim)])
@@ -611,11 +619,16 @@ class SPHBase:
     @ti.func
     def viscosity_force(self, p_i, p_j, r):
         # Compute the viscosity force contribution
-        v_xy = (self.ps.v[p_i] -
-                self.ps.v[p_j]).dot(r)
-        res = 2 * (self.ps.dim + 2) * self.viscosity * (self.ps.m[p_j] / (self.ps.density[p_j])) * v_xy / (
-            r.norm()**2 + 0.01 * self.ps.support_radius**2) * self.cubic_kernel_derivative(
-                r)
+        v_xy = (self.ps.v[p_i] - self.ps.v[p_j]).dot(r)
+        res = (
+            2
+            * (self.ps.dim + 2)
+            * self.viscosity
+            * (self.ps.m[p_j] / (self.ps.density[p_j]))
+            * v_xy
+            / (r.norm() ** 2 + 0.01 * self.ps.support_radius**2)
+            * self.cubic_kernel_derivative(r)
+        )
         return res
 
     def initialize(self):
@@ -636,13 +649,14 @@ class SPHBase:
                 continue
             delta = self.cubic_kernel(0.0)
             self.ps.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
-            self.ps.m_V[p_i] = 1.0 / delta * 3.0  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
+            self.ps.m_V[p_i] = (
+                1.0 / delta * 3.0
+            )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
     @ti.func
     def compute_boundary_volume_task(self, p_i, p_j, delta: ti.template()):
         if self.ps.material[p_j] == self.ps.material_solid:
             delta += self.cubic_kernel((self.ps.x[p_i] - self.ps.x[p_j]).norm())
-
 
     @ti.kernel
     def compute_moving_boundary_volume(self):
@@ -651,7 +665,9 @@ class SPHBase:
                 continue
             delta = self.cubic_kernel(0.0)
             self.ps.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
-            self.ps.m_V[p_i] = 1.0 / delta * 3.0  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
+            self.ps.m_V[p_i] = (
+                1.0 / delta * 3.0
+            )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
     def substep(self):
         pass
@@ -660,13 +676,12 @@ class SPHBase:
     def simulate_collisions(self, p_i, vec):
         # Collision factor, assume roughly (1-c_f)*velocity loss after collision
         c_f = 0.5
-        self.ps.v[p_i] -= (
-            1.0 + c_f) * self.ps.v[p_i].dot(vec) * vec
+        self.ps.v[p_i] -= (1.0 + c_f) * self.ps.v[p_i].dot(vec) * vec
 
     @ti.kernel
-    def enforce_boundary_2D(self, particle_type:int):
+    def enforce_boundary_2D(self, particle_type: int):
         for p_i in ti.grouped(self.ps.x):
-            if self.ps.material[p_i] == particle_type and self.ps.is_dynamic[p_i]: 
+            if self.ps.material[p_i] == particle_type and self.ps.is_dynamic[p_i]:
                 pos = self.ps.x[p_i]
                 collision_normal = ti.Vector([0.0, 0.0])
                 if pos[0] > self.ps.domain_size[0] - self.ps.padding:
@@ -684,11 +699,10 @@ class SPHBase:
                     self.ps.x[p_i][1] = self.ps.padding
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
-                    self.simulate_collisions(
-                            p_i, collision_normal / collision_normal_length)
+                    self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
     @ti.kernel
-    def enforce_boundary_3D(self, particle_type:int):
+    def enforce_boundary_3D(self, particle_type: int):
         for p_i in ti.grouped(self.ps.x):
             if self.ps.material[p_i] == particle_type and self.ps.is_dynamic[p_i]:
                 pos = self.ps.x[p_i]
@@ -716,9 +730,7 @@ class SPHBase:
 
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
-                    self.simulate_collisions(
-                            p_i, collision_normal / collision_normal_length)
-
+                    self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
     @ti.func
     def compute_com(self, object_id):
@@ -731,12 +743,10 @@ class SPHBase:
                 sum_m += mass
         cm /= sum_m
         return cm
-    
 
     @ti.kernel
-    def compute_com_kernel(self, object_id: int)->ti.types.vector(3, float):
+    def compute_com_kernel(self, object_id: int) -> ti.types.vector(3, float):
         return self.compute_com(object_id)
-
 
     @ti.kernel
     def solve_constraints(self, object_id: int) -> ti.types.matrix(3, 3, float):
@@ -751,17 +761,16 @@ class SPHBase:
                 A += self.ps.m_V0 * self.ps.density[p_i] * p.outer_product(q)
 
         R, S = ti.polar_decompose(A)
-        
+
         if all(abs(R) < 1e-6):
             R = ti.Matrix.identity(ti.f32, 3)
-        
+
         for p_i in range(self.ps.particle_num[None]):
             if self.ps.is_dynamic_rigid_body(p_i) and self.ps.object_id[p_i] == object_id:
                 goal = cm + R @ (self.ps.x_0[p_i] - self.ps.rigid_rest_cm[object_id])
                 corr = (goal - self.ps.x[p_i]) * 1.0
                 self.ps.x[p_i] += corr
         return R
-        
 
     # @ti.kernel
     # def compute_rigid_collision(self):
@@ -782,8 +791,6 @@ class SPHBase:
     #                     x_delta += (r.norm() - self.ps.particle_diameter) * r.normalized()
     #         if cnt > 0:
     #             self.ps.x[p_i] += 2.0 * x_delta # / cnt
-                        
-
 
     def solve_rigid_body(self):
         for i in range(1):
@@ -794,12 +801,17 @@ class SPHBase:
                     if self.ps.cfg.get_cfg("exportObj"):
                         # For output obj only: update the mesh
                         cm = self.compute_com_kernel(r_obj_id)
-                        ret = R.to_numpy() @ (self.ps.object_collection[r_obj_id]["restPosition"] - self.ps.object_collection[r_obj_id]["restCenterOfMass"]).T
+                        ret = (
+                            R.to_numpy()
+                            @ (
+                                self.ps.object_collection[r_obj_id]["restPosition"]
+                                - self.ps.object_collection[r_obj_id]["restCenterOfMass"]
+                            ).T
+                        )
                         self.ps.object_collection[r_obj_id]["mesh"].vertices = cm.to_numpy() + ret.T
 
                     # self.compute_rigid_collision()
                     self.enforce_boundary_3D(self.ps.material_solid)
-
 
     def step(self):
         self.ps.initialize_particle_system()
@@ -811,6 +823,7 @@ class SPHBase:
         elif self.ps.dim == 3:
             self.enforce_boundary_3D(self.ps.material_fluid)
 
+
 # ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
 # ---------------------------------------------------------------------------- #
@@ -819,7 +832,7 @@ class SPHBase:
 class DFSPHSolver(SPHBase):
     def __init__(self, particle_system):
         super().__init__(particle_system)
-        
+
         self.surface_tension = 0.01
         self.dt[None] = self.ps.cfg.get_cfg("timeStepSize")
 
@@ -832,7 +845,6 @@ class DFSPHSolver(SPHBase):
 
         self.max_error_V = 0.1
         self.max_error = 0.05
-    
 
     @ti.func
     def compute_densities_task(self, p_i, p_j, ret: ti.template()):
@@ -847,7 +859,6 @@ class DFSPHSolver(SPHBase):
             x_j = self.ps.x[p_j]
             ret += self.ps.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
 
-
     @ti.kernel
     def compute_densities(self):
         # for p_i in range(self.ps.particle_num[None]):
@@ -859,12 +870,11 @@ class DFSPHSolver(SPHBase):
             self.ps.for_all_neighbors(p_i, self.compute_densities_task, den)
             self.ps.density[p_i] += den
             self.ps.density[p_i] *= self.density_0
-    
 
     @ti.func
     def compute_non_pressure_forces_task(self, p_i, p_j, ret: ti.template()):
         x_i = self.ps.x[p_i]
-        
+
         ############## Surface Tension ###############
         if self.ps.material[p_j] == self.ps.material_fluid:
             # Fluid neighbors
@@ -875,31 +885,46 @@ class DFSPHSolver(SPHBase):
             if r2 > diameter2:
                 ret -= self.surface_tension / self.ps.m[p_i] * self.ps.m[p_j] * r * self.cubic_kernel(r.norm())
             else:
-                ret -= self.surface_tension / self.ps.m[p_i] * self.ps.m[p_j] * r * self.cubic_kernel(ti.Vector([self.ps.particle_diameter, 0.0, 0.0]).norm())
-            
-        
+                ret -= (
+                    self.surface_tension
+                    / self.ps.m[p_i]
+                    * self.ps.m[p_j]
+                    * r
+                    * self.cubic_kernel(ti.Vector([self.ps.particle_diameter, 0.0, 0.0]).norm())
+                )
+
         ############### Viscosoty Force ###############
         d = 2 * (self.ps.dim + 2)
         x_j = self.ps.x[p_j]
         # Compute the viscosity force contribution
         r = x_i - x_j
-        v_xy = (self.ps.v[p_i] -
-                self.ps.v[p_j]).dot(r)
-        
+        v_xy = (self.ps.v[p_i] - self.ps.v[p_j]).dot(r)
+
         if self.ps.material[p_j] == self.ps.material_fluid:
-            f_v = d * self.viscosity * (self.ps.m[p_j] / (self.ps.density[p_j])) * v_xy / (
-                r.norm()**2 + 0.01 * self.ps.support_radius**2) * self.cubic_kernel_derivative(r)
+            f_v = (
+                d
+                * self.viscosity
+                * (self.ps.m[p_j] / (self.ps.density[p_j]))
+                * v_xy
+                / (r.norm() ** 2 + 0.01 * self.ps.support_radius**2)
+                * self.cubic_kernel_derivative(r)
+            )
             ret += f_v
         elif self.ps.material[p_j] == self.ps.material_solid:
             boundary_viscosity = 0.0
             # Boundary neighbors
             ## Akinci2012
-            f_v = d * boundary_viscosity * (self.density_0 * self.ps.m_V[p_j] / (self.ps.density[p_i])) * v_xy / (
-                r.norm()**2 + 0.01 * self.ps.support_radius**2) * self.cubic_kernel_derivative(r)
+            f_v = (
+                d
+                * boundary_viscosity
+                * (self.density_0 * self.ps.m_V[p_j] / (self.ps.density[p_i]))
+                * v_xy
+                / (r.norm() ** 2 + 0.01 * self.ps.support_radius**2)
+                * self.cubic_kernel_derivative(r)
+            )
             ret += f_v
             if self.ps.is_dynamic_rigid_body(p_j):
                 self.ps.acceleration[p_j] += -f_v * self.ps.density[p_i] / self.ps.density[p_j]
-
 
     @ti.kernel
     def compute_non_pressure_forces(self):
@@ -914,7 +939,6 @@ class DFSPHSolver(SPHBase):
             if self.ps.material[p_i] == self.ps.material_fluid:
                 self.ps.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
                 self.ps.acceleration[p_i] = d_v
-    
 
     @ti.kernel
     def advect(self):
@@ -924,7 +948,6 @@ class DFSPHSolver(SPHBase):
                 if self.ps.is_dynamic_rigid_body(p_i):
                     self.ps.v[p_i] += self.dt[None] * self.ps.acceleration[p_i]
                 self.ps.x[p_i] += self.dt[None] * self.ps.v[p_i]
-    
 
     @ti.kernel
     def compute_DFSPH_factor(self):
@@ -933,12 +956,12 @@ class DFSPHSolver(SPHBase):
                 continue
             sum_grad_p_k = 0.0
             grad_p_i = ti.Vector([0.0 for _ in range(self.ps.dim)])
-            
+
             # `ret` concatenates `grad_p_i` and `sum_grad_p_k`
             ret = ti.Vector([0.0 for _ in range(self.ps.dim + 1)])
-            
+
             self.ps.for_all_neighbors(p_i, self.compute_DFSPH_factor_task, ret)
-            
+
             sum_grad_p_k = ret[3]
             for i in ti.static(range(3)):
                 grad_p_i[i] = ret[i]
@@ -951,23 +974,21 @@ class DFSPHSolver(SPHBase):
             else:
                 factor = 0.0
             self.ps.dfsph_factor[p_i] = factor
-            
 
     @ti.func
     def compute_DFSPH_factor_task(self, p_i, p_j, ret: ti.template()):
         if self.ps.material[p_j] == self.ps.material_fluid:
             # Fluid neighbors
             grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
-            ret[3] += grad_p_j.norm_sqr() # sum_grad_p_k
-            for i in ti.static(range(3)): # grad_p_i
+            ret[3] += grad_p_j.norm_sqr()  # sum_grad_p_k
+            for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
         elif self.ps.material[p_j] == self.ps.material_solid:
             # Boundary neighbors
             ## Akinci2012
             grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
-            for i in ti.static(range(3)): # grad_p_i
+            for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
-    
 
     @ti.kernel
     def compute_density_change(self):
@@ -988,9 +1009,8 @@ class DFSPHSolver(SPHBase):
             else:
                 if num_neighbors < 7:
                     density_adv = 0.0
-     
-            self.ps.density_adv[p_i] = density_adv
 
+            self.ps.density_adv[p_i] = density_adv
 
     @ti.func
     def compute_density_change_task(self, p_i, p_j, ret: ti.template()):
@@ -998,15 +1018,18 @@ class DFSPHSolver(SPHBase):
         v_j = self.ps.v[p_j]
         if self.ps.material[p_j] == self.ps.material_fluid:
             # Fluid neighbors
-            ret.density_adv += self.ps.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j]))
+            ret.density_adv += self.ps.m_V[p_j] * (v_i - v_j).dot(
+                self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
+            )
         elif self.ps.material[p_j] == self.ps.material_solid:
             # Boundary neighbors
             ## Akinci2012
-            ret.density_adv += self.ps.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j]))
-        
+            ret.density_adv += self.ps.m_V[p_j] * (v_i - v_j).dot(
+                self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
+            )
+
         # Compute the number of neighbors
         ret.num_neighbors += 1
-    
 
     @ti.kernel
     def compute_density_adv(self):
@@ -1015,9 +1038,8 @@ class DFSPHSolver(SPHBase):
                 continue
             delta = 0.0
             self.ps.for_all_neighbors(p_i, self.compute_density_adv_task, delta)
-            density_adv = self.ps.density[p_i] /self.density_0 + self.dt[None] * delta
+            density_adv = self.ps.density[p_i] / self.density_0 + self.dt[None] * delta
             self.ps.density_adv[p_i] = ti.max(density_adv, 1.0)
-
 
     @ti.func
     def compute_density_adv_task(self, p_i, p_j, ret: ti.template()):
@@ -1030,7 +1052,6 @@ class DFSPHSolver(SPHBase):
             # Boundary neighbors
             ## Akinci2012
             ret += self.ps.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j]))
-
 
     @ti.kernel
     def compute_density_error(self, offset: float) -> float:
@@ -1046,21 +1067,19 @@ class DFSPHSolver(SPHBase):
             if self.ps.material[I] == self.ps.material_fluid:
                 field[I] *= time_step
 
-
     def divergence_solve(self):
-        # TODO: warm start 
+        # TODO: warm start
         # Compute velocity of density change
         self.compute_density_change()
         inv_dt = 1 / self.dt[None]
         self.multiply_time_step(self.ps.dfsph_factor, inv_dt)
 
         m_iterations_v = 0
-        
+
         # Start solver
         avg_density_err = 0.0
 
         while m_iterations_v < 1 or m_iterations_v < self.m_max_iterations_v:
-            
             avg_density_err = self.divergence_solver_iteration()
             # Max allowed density fluctuation
             # use max density error divided by time step size
@@ -1071,8 +1090,8 @@ class DFSPHSolver(SPHBase):
             m_iterations_v += 1
         print(f"DFSPH - iteration V: {m_iterations_v} Avg density err: {avg_density_err}")
 
-        # Multiply by h, the time step size has to be removed 
-        # to make the stiffness value independent 
+        # Multiply by h, the time step size has to be removed
+        # to make the stiffness value independent
         # of the time step size
 
         # TODO: if warm start
@@ -1080,13 +1099,11 @@ class DFSPHSolver(SPHBase):
 
         self.multiply_time_step(self.ps.dfsph_factor, self.dt[None])
 
-
     def divergence_solver_iteration(self):
         self.divergence_solver_iteration_kernel()
         self.compute_density_change()
         density_err = self.compute_density_error(0.0)
         return density_err / self.ps.fluid_particle_num
-
 
     @ti.kernel
     def divergence_solver_iteration_kernel(self):
@@ -1096,21 +1113,22 @@ class DFSPHSolver(SPHBase):
                 continue
             # evaluate rhs
             b_i = self.ps.density_adv[p_i]
-            k_i = b_i*self.ps.dfsph_factor[p_i]
+            k_i = b_i * self.ps.dfsph_factor[p_i]
             ret = ti.Struct(dv=ti.Vector([0.0 for _ in range(self.ps.dim)]), k_i=k_i)
             # TODO: if warm start
             # get_kappa_V += k_i
             self.ps.for_all_neighbors(p_i, self.divergence_solver_iteration_task, ret)
             self.ps.v[p_i] += ret.dv
-        
-    
+
     @ti.func
     def divergence_solver_iteration_task(self, p_i, p_j, ret: ti.template()):
         if self.ps.material[p_j] == self.ps.material_fluid:
             # Fluid neighbors
             b_j = self.ps.density_adv[p_j]
             k_j = b_j * self.ps.dfsph_factor[p_j]
-            k_sum = ret.k_i + self.density_0 / self.density_0 * k_j  # TODO: make the neighbor density0 different for multiphase fluid
+            k_sum = (
+                ret.k_i + self.density_0 / self.density_0 * k_j
+            )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
                 grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
                 ret.dv -= self.dt[None] * k_sum * grad_p_j
@@ -1119,18 +1137,19 @@ class DFSPHSolver(SPHBase):
             ## Akinci2012
             if ti.abs(ret.k_i) > self.m_eps:
                 grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
-                vel_change =  -self.dt[None] * 1.0 * ret.k_i * grad_p_j
+                vel_change = -self.dt[None] * 1.0 * ret.k_i * grad_p_j
                 ret.dv += vel_change
                 if self.ps.is_dynamic_rigid_body(p_j):
-                    self.ps.acceleration[p_j] += -vel_change * (1 / self.dt[None]) * self.ps.density[p_i] / self.ps.density[p_j]
-
+                    self.ps.acceleration[p_j] += (
+                        -vel_change * (1 / self.dt[None]) * self.ps.density[p_i] / self.ps.density[p_j]
+                    )
 
     def pressure_solve(self):
         inv_dt = 1 / self.dt[None]
         inv_dt2 = 1 / (self.dt[None] * self.dt[None])
 
         # TODO: warm start
-        
+
         # Compute rho_adv
         self.compute_density_adv()
 
@@ -1142,7 +1161,6 @@ class DFSPHSolver(SPHBase):
         avg_density_err = 0.0
 
         while m_iterations < 1 or m_iterations < self.m_max_iterations:
-            
             avg_density_err = self.pressure_solve_iteration()
             # Max allowed density fluctuation
             eta = self.max_error * 0.01 * self.density_0
@@ -1150,20 +1168,19 @@ class DFSPHSolver(SPHBase):
                 break
             m_iterations += 1
         print(f"DFSPH - iterations: {m_iterations} Avg density Err: {avg_density_err:.4f}")
-        # Multiply by h, the time step size has to be removed 
-        # to make the stiffness value independent 
+        # Multiply by h, the time step size has to be removed
+        # to make the stiffness value independent
         # of the time step size
 
         # TODO: if warm start
         # also remove for kappa v
-    
+
     def pressure_solve_iteration(self):
         self.pressure_solve_iteration_kernel()
         self.compute_density_adv()
         density_err = self.compute_density_error(self.density_0)
         return density_err / self.ps.fluid_particle_num
 
-    
     @ti.kernel
     def pressure_solve_iteration_kernel(self):
         # Compute pressure forces
@@ -1177,7 +1194,6 @@ class DFSPHSolver(SPHBase):
             # TODO: if warmstart
             # get kappa V
             self.ps.for_all_neighbors(p_i, self.pressure_solve_iteration_task, k_i)
-    
 
     @ti.func
     def pressure_solve_iteration_task(self, p_i, p_j, k_i: ti.template()):
@@ -1185,7 +1201,9 @@ class DFSPHSolver(SPHBase):
             # Fluid neighbors
             b_j = self.ps.density_adv[p_j] - 1.0
             k_j = b_j * self.ps.dfsph_factor[p_j]
-            k_sum = k_i + self.density_0 / self.density_0 * k_j # TODO: make the neighbor density0 different for multiphase fluid
+            k_sum = (
+                k_i + self.density_0 / self.density_0 * k_j
+            )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
                 grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
                 # Directly update velocities instead of storing pressure accelerations
@@ -1197,11 +1215,12 @@ class DFSPHSolver(SPHBase):
                 grad_p_j = -self.ps.m_V[p_j] * self.cubic_kernel_derivative(self.ps.x[p_i] - self.ps.x[p_j])
 
                 # Directly update velocities instead of storing pressure accelerations
-                vel_change = - self.dt[None] * 1.0 * k_i * grad_p_j  # kj already contains inverse density
+                vel_change = -self.dt[None] * 1.0 * k_i * grad_p_j  # kj already contains inverse density
                 self.ps.v[p_i] += vel_change
                 if self.ps.is_dynamic_rigid_body(p_j):
-                    self.ps.acceleration[p_j] += -vel_change * 1.0 / self.dt[None] * self.ps.density[p_i] / self.ps.density[p_j] 
-
+                    self.ps.acceleration[p_j] += (
+                        -vel_change * 1.0 / self.dt[None] * self.ps.density[p_i] / self.ps.density[p_j]
+                    )
 
     @ti.kernel
     def predict_velocity(self):
@@ -1209,7 +1228,6 @@ class DFSPHSolver(SPHBase):
         for p_i in ti.grouped(self.ps.x):
             if self.ps.is_dynamic[p_i] and self.ps.material[p_i] == self.ps.material_fluid:
                 self.ps.v[p_i] += self.dt[None] * self.ps.acceleration[p_i]
-
 
     def substep(self):
         self.compute_densities()
@@ -1236,14 +1254,13 @@ def filedialog():
     print("Open scene file: ", filename)
     return filename
 
+
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='SPH Taichi')
-    parser.add_argument('--scene_file',
-                        default='',
-                        help='scene file')
+    parser = argparse.ArgumentParser(description="SPH Taichi")
+    parser.add_argument("--scene_file", default="", help="scene file")
     args = parser.parse_args()
     if args.scene_file == "":
         scene_path = filedialog()
@@ -1263,12 +1280,11 @@ if __name__ == "__main__":
     if output_ply:
         os.makedirs(f"{scene_name}_output", exist_ok=True)
 
-
     ps = ParticleSystem(config, GGUI=True)
     solver = ps.build_solver()
     solver.initialize()
 
-    window = ti.ui.Window('SPH', (1024, 1024), show_window = True, vsync=False)
+    window = ti.ui.Window("SPH", (1024, 1024), show_window=True, vsync=False)
 
     scene = ti.ui.Scene()
     camera = ti.ui.Camera()
@@ -1291,7 +1307,7 @@ if __name__ == "__main__":
 
     # Draw the lines for domain
     x_max, y_max, z_max = config.get_cfg("domainEnd")
-    box_anchors = ti.Vector.field(3, dtype=ti.f32, shape = 8)
+    box_anchors = ti.Vector.field(3, dtype=ti.f32, shape=8)
     box_anchors[0] = ti.Vector([0.0, 0.0, 0.0])
     box_anchors[1] = ti.Vector([0.0, y_max, 0.0])
     box_anchors[2] = ti.Vector([x_max, 0.0, 0.0])
@@ -1324,13 +1340,13 @@ if __name__ == "__main__":
             scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
             scene.particles(ps.x_vis_buffer, radius=ps.particle_radius, per_vertex_color=ps.color_vis_buffer)
 
-            scene.lines(box_anchors, indices=box_lines_indices, color = (0.99, 0.68, 0.28), width = 1.0)
+            scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
             canvas.scene(scene)
-    
+
         if output_frames:
             if cnt % output_interval == 0:
                 window.write_image(f"{scene_name}_output_img/{cnt:06}.png")
-        
+
         if cnt % output_interval == 0:
             if output_ply:
                 obj_id = 0
@@ -1342,7 +1358,7 @@ if __name__ == "__main__":
             if output_obj:
                 for r_body_id in ps.object_id_rigid_body:
                     with open(f"{scene_name}_output/obj_{r_body_id}_{cnt_ply:06}.obj", "w") as f:
-                        e = ps.object_collection[r_body_id]["mesh"].export(file_type='obj')
+                        e = ps.object_collection[r_body_id]["mesh"].export(file_type="obj")
                         f.write(e)
             cnt_ply += 1
 
