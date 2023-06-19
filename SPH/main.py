@@ -1049,8 +1049,13 @@ def main():
         box_lines_indices[i] = val
 
     cnt = 0
+    meta.paused = True
     while window.running:
-        for i in range(substeps):
+        for e in window.get_events(ti.ui.PRESS):
+            if e.key == ti.ui.SPACE:
+                meta.paused = not meta.paused
+                print("paused:", meta.paused)
+        if not meta.paused:
             solver.step()
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
         scene.set_camera(camera)
