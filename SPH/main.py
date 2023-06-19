@@ -516,96 +516,123 @@ class SPHBase:
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
-    @ti.func
-    def compute_com(self, object_id):
-        sum_m = 0.0
-        cm = ti.Vector([0.0, 0.0, 0.0])
-        for p_i in range(meta.ps.particle_num[None]):
-            if meta.ps.is_dynamic_rigid_body(p_i) and meta.ps.object_id[p_i] == object_id:
-                mass = meta.ps.m_V0 * meta.ps.density[p_i]
-                cm += mass * meta.ps.x[p_i]
-                sum_m += mass
-        cm /= sum_m
-        return cm
-
     @ti.kernel
-    def compute_com_kernel(self, object_id: int) -> ti.types.vector(3, float):
-        return self.compute_com(object_id)
-
-    @ti.kernel
-    def solve_constraints(self, object_id: int) -> ti.types.matrix(3, 3, float):
-        # compute center of mass
-        cm = self.compute_com(object_id)
-        # A
-        A = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-        for p_i in range(meta.ps.particle_num[None]):
-            if meta.ps.is_dynamic_rigid_body(p_i) and meta.ps.object_id[p_i] == object_id:
-                q = meta.ps.x_0[p_i] - meta.ps.rigid_rest_cm[object_id]
-                p = meta.ps.x[p_i] - cm
-                A += meta.ps.m_V0 * meta.ps.density[p_i] * p.outer_product(q)
-
-        R, S = ti.polar_decompose(A)
-
-        if all(abs(R) < 1e-6):
-            R = ti.Matrix.identity(ti.f32, 3)
-
-        for p_i in range(meta.ps.particle_num[None]):
-            if meta.ps.is_dynamic_rigid_body(p_i) and meta.ps.object_id[p_i] == object_id:
-                goal = cm + R @ (meta.ps.x_0[p_i] - meta.ps.rigid_rest_cm[object_id])
-                corr = (goal - meta.ps.x[p_i]) * 1.0
-                meta.ps.x[p_i] += corr
-        return R
-
-    # @ti.kernel
-    # def compute_rigid_collision(self):
-    #     # FIXME: This is a workaround, rigid collision failure in some cases is expected
-    #     for p_i in range(meta.ps.particle_num[None]):
-    #         if not meta.ps.is_dynamic_rigid_body(p_i):
-    #             continue
-    #         cnt = 0
-    #         x_delta = ti.Vector([0.0 for i in range(meta.ps.dim)])
-    #         for j in range(meta.ps.solid_neighbors_num[p_i]):
-    #             p_j = meta.ps.solid_neighbors[p_i, j]
-
-    #             if meta.ps.is_static_rigid_body(p_i):
-    #                 cnt += 1
-    #                 x_j = meta.ps.x[p_j]
-    #                 r = meta.ps.x[p_i] - x_j
-    #                 if r.norm() < meta.ps.particle_diameter:
-    #                     x_delta += (r.norm() - meta.ps.particle_diameter) * r.normalized()
-    #         if cnt > 0:
-    #             meta.ps.x[p_i] += 2.0 * x_delta # / cnt
-
-    def solve_rigid_body(self):
-        for i in range(1):
-            for r_obj_id in meta.ps.object_id_rigid_body:
-                if meta.ps.object_collection[r_obj_id]["isDynamic"]:
-                    R = self.solve_constraints(r_obj_id)
-
-                    if get_cfg("exportObj"):
-                        # For output obj only: update the mesh
-                        cm = self.compute_com_kernel(r_obj_id)
-                        ret = (
-                            R.to_numpy()
-                            @ (
-                                meta.ps.object_collection[r_obj_id]["restPosition"]
-                                - meta.ps.object_collection[r_obj_id]["restCenterOfMass"]
-                            ).T
-                        )
-                        meta.ps.object_collection[r_obj_id]["mesh"].vertices = cm.to_numpy() + ret.T
-
-                    # self.compute_rigid_collision()
-                    self.enforce_boundary_3D(SOLID)
+    def copy_rb_pos(self):
+        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.rb.num_particles):
+            meta.ps.x[i] = meta.ps.rb.positions[i - meta.ps.fluid_particle_num]
 
     def step(self):
         meta.ps.initialize_particle_system()
         self.compute_moving_boundary_volume()
         self.substep()
-        self.solve_rigid_body()
+        # self.solve_rigid_body()
         if meta.ps.dim == 2:
             self.enforce_boundary_2D(FLUID)
         elif meta.ps.dim == 3:
             self.enforce_boundary_3D(FLUID)
+
+
+# ---------------------------------------------------------------------------- #
+#                                   RigidBody                                  #
+# ---------------------------------------------------------------------------- #
+@ti.data_oriented
+class RigidBody:
+    def __init__(self, init_pos):
+        self.num_particles = init_pos.shape[0]
+        self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.mass_inv = 1.0
+        self.dt = get_cfg("timeStepSize")
+        self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
+        self.radius_vector = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+
+        self.positions.from_numpy(init_pos)
+        self.positions0.from_numpy(init_pos)
+
+        self.compute_radius_vector(self.num_particles, self.positions, self.radius_vector)
+        self.precompute_q_inv(self.num_particles, self.radius_vector, self.q_inv)
+
+    def substep(self):
+        self.shape_matching(
+            self.num_particles,
+            self.positions0,
+            self.positions,
+            self.velocities,
+            self.mass_inv,
+            self.dt,
+            self.q_inv,
+            self.radius_vector,
+        )
+
+    @staticmethod
+    @ti.kernel
+    def shape_matching(
+        num_particles: int,
+        positions0: ti.template(),
+        positions: ti.template(),
+        velocities: ti.template(),
+        mass_inv: ti.f32,
+        dt: ti.f32,
+        q_inv: ti.template(),
+        radius_vector: ti.template(),
+    ):
+        #  update vel and pos firtly
+        gravity = ti.Vector([0.0, -9.8, 0.0])
+        for i in range(num_particles):
+            positions0[i] = positions[i]
+            f = gravity
+            velocities[i] += mass_inv * f * dt
+            positions[i] += velocities[i] * dt
+            if positions[i].y < 0.0:
+                positions[i] = positions0[i]
+                positions[i].y = 0.0
+
+        # compute the new(matched shape) mass center
+        c = ti.Vector([0.0, 0.0, 0.0])
+        for i in range(num_particles):
+            c += positions[i]
+        c /= num_particles
+
+        # compute transformation matrix and extract rotation
+        A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+        for i in range(num_particles):
+            sum1 += (positions[i] - c).outer_product(radius_vector[i])
+        A = sum1 @ q_inv[None]
+
+        R, _ = ti.polar_decompose(A)
+
+        # update velocities and positions
+        for i in range(num_particles):
+            positions[i] = c + R @ radius_vector[i]
+            velocities[i] = (positions[i] - positions0[i]) / dt
+
+    @staticmethod
+    @ti.kernel
+    def compute_radius_vector(num_particles: int, positions: ti.template(), radius_vector: ti.template()):
+        # compute the mass center and radius vector
+        center_mass = ti.Vector([0.0, 0.0, 0.0])
+        for i in range(num_particles):
+            center_mass += positions[i]
+        center_mass /= num_particles
+        for i in range(num_particles):
+            radius_vector[i] = positions[i] - center_mass
+
+    @staticmethod
+    @ti.kernel
+    def precompute_q_inv(num_particles: int, radius_vector: ti.template(), q_inv: ti.template()):
+        res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
+        for i in range(num_particles):
+            res += radius_vector[i].outer_product(radius_vector[i])
+        q_inv[None] = res.inverse()
+
+    @staticmethod
+    @ti.kernel
+    def rotation(angle: ti.f32, positions: ti.template()):
+        theta = angle / 180.0 * np.pi
+        R = ti.Matrix([[ti.cos(theta), -ti.sin(theta), 0.0], [ti.sin(theta), ti.cos(theta), 0.0], [0.0, 0.0, 1.0]])
+        for i in positions:
+            positions[i] = R @ positions[i]
 
 
 # ---------------------------------------------------------------------------- #
@@ -1037,7 +1064,7 @@ def main():
     solver = build_solver()
     solver.initialize()
 
-    window = ti.ui.Window("SPH", (1024, 1024), show_window=True, vsync=False)
+    window = ti.ui.Window("SPH", (1024, 1024), show_window=True, vsync=True)
 
     scene = ti.ui.Scene()
     camera = ti.ui.Camera()
@@ -1068,6 +1095,10 @@ def main():
     for i, val in enumerate([0, 1, 0, 2, 1, 3, 2, 3, 4, 5, 4, 6, 5, 7, 6, 7, 0, 4, 1, 5, 2, 6, 3, 7]):
         box_lines_indices[i] = val
 
+    rb_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
+    rb = RigidBody(rb_pos)
+    rb.rotation(60, rb.positions)
+
     cnt = 0
     meta.paused = True
     while window.running:
@@ -1076,11 +1107,13 @@ def main():
                 meta.paused = not meta.paused
                 print("paused:", meta.paused)
         if not meta.paused:
-            solver.step()
+            # solver.step()
+            rb.substep()
+
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
-        scene.particles(ps.x, radius=ps.particle_radius, color=particle_color)
+        scene.particles(rb.positions, radius=ps.particle_radius, color=particle_color)
         scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
         canvas.scene(scene)
         cnt += 1
