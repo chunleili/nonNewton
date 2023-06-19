@@ -182,24 +182,24 @@ class ParticleSystem:
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
 
-        self.x_vis_buffer = None
-        if self.GGUI:
-            self.x_vis_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-            self.color_vis_buffer = ti.Vector.field(3, dtype=float, shape=self.particle_max_num)
 
         # ========== Initialize particles ==========#
+        self.all_fluid_list = []
         for i in range(len(self.fluid_particles)):
             f = self.fluid_particles[i]
+            self.all_fluid_list.append(f)
+
+        self.all_fluid_np = np.concatenate(self.all_fluid_list, axis=0)
             
-            self.x.from_numpy(f)
-            self.x_0.from_numpy(f)
-            self.m_V.fill(self.m_V0)
-            self.m.fill(self.m_V0 * 1000.0)
-            self.density.fill(self.density0)
-            self.pressure.fill(0.0)
-            self.material.fill(self.material_fluid)
-            self.color.fill(0)
-            self.is_dynamic.fill(1)
+        self.x.from_numpy(self.all_fluid_np)
+        self.x_0.from_numpy(self.all_fluid_np)
+        self.m_V.fill(self.m_V0)
+        self.m.fill(self.m_V0 * 1000.0)
+        self.density.fill(self.density0)
+        self.pressure.fill(0.0)
+        self.material.fill(self.material_fluid)
+        self.color.fill(0)
+        self.is_dynamic.fill(1)
 
     def build_solver(self):
         solver_type = self.cfg.get_cfg("simulationMethod")
