@@ -58,7 +58,7 @@ class ParticleSystem:
 
         # ========== Compute number of particles ==========#
         #### Process Fluid Blocks ####
-        fluid_blocks = self.cfg.get_fluid_blocks()
+        fluid_blocks = self.cfg.config.get("FluidBlocks",[])
         fluid_particle_num = 0
         for fluid in fluid_blocks:
             particle_num = self.compute_cube_particle_num(fluid["start"], fluid["end"])
@@ -67,7 +67,7 @@ class ParticleSystem:
             fluid_particle_num += particle_num
 
         #### Process Rigid Blocks ####
-        rigid_blocks = self.cfg.get_rigid_blocks()
+        rigid_blocks = self.cfg.config.get("RigidBlocks",[]) 
         rigid_particle_num = 0
         for rigid in rigid_blocks:
             particle_num = self.compute_cube_particle_num(rigid["start"], rigid["end"])
@@ -76,7 +76,7 @@ class ParticleSystem:
             rigid_particle_num += particle_num
 
         #### Process Rigid Bodies ####
-        rigid_bodies = self.cfg.get_rigid_bodies()
+        rigid_bodies = self.cfg.config.get("RigidBodies",[]) 
         for rigid_body in rigid_bodies:
             voxelized_points_np = self.load_rigid_body(rigid_body)
             rigid_body["particleNum"] = voxelized_points_np.shape[0]
@@ -516,35 +516,13 @@ class SimConfig:
         self.config = None
         with open(scene_file_path, "r") as f:
             self.config = json.load(f)
-        print(self.config)
+        print(json.dumps(self.config, indent=2))
 
-    def get_cfg(self, name, enforce_exist=False):
-        if enforce_exist:
-            assert name in self.config["Configuration"]
+    def get_cfg(self, name, default=None):
         if name not in self.config["Configuration"]:
-            if enforce_exist:
-                assert name in self.config["Configuration"]
-            else:
-                return None
-        return self.config["Configuration"][name]
-
-    def get_rigid_bodies(self):
-        if "RigidBodies" in self.config:
-            return self.config["RigidBodies"]
+            return default
         else:
-            return []
-
-    def get_rigid_blocks(self):
-        if "RigidBlocks" in self.config:
-            return self.config["RigidBlocks"]
-        else:
-            return []
-
-    def get_fluid_blocks(self):
-        if "FluidBlocks" in self.config:
-            return self.config["FluidBlocks"]
-        else:
-            return []
+            return self.config["Configuration"][name]
 
 
 # ---------------------------------------------------------------------------- #
