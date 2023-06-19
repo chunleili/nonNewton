@@ -12,8 +12,10 @@ ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
 sph_root_path = os.path.dirname(os.path.abspath(__file__))
 
+
 class Meta:
     ...
+
 
 meta = Meta()
 
@@ -22,16 +24,18 @@ meta = Meta()
 #                                read json scene                               #
 # ---------------------------------------------------------------------------- #
 
+
 def filedialog():
     import tkinter as tk
     from tkinter import filedialog
 
     root = tk.Tk()
-    root.filename = filedialog.askopenfilename(initialdir=sph_root_path+"/data/scenes", title="Select a File")
+    root.filename = filedialog.askopenfilename(initialdir=sph_root_path + "/data/scenes", title="Select a File")
     filename = root.filename
     root.destroy()  # close the window
     print("Open scene file: ", filename)
     return filename
+
 
 meta.scene_path = filedialog()
 
@@ -49,7 +53,14 @@ class SimConfig:
         else:
             return self.config["Configuration"][name]
 
+
 meta.config = SimConfig(meta.scene_path)
+
+
+def get_cfg(name, default=None):
+    return meta.config.get_cfg(name, default)
+
+
 # ---------------------------------------------------------------------------- #
 #                                      io                                      #
 # ---------------------------------------------------------------------------- #
@@ -61,43 +72,47 @@ def points_from_volume(mesh, particle_seperation=0.02):
 
 def read_ply_particles(geometryFile):
     plydata = plyfile.PlyData.read(geometryFile)
-    pts = np.stack([plydata['vertex']['x'], plydata['vertex']['y'], plydata['vertex']['z']], axis=1)
+    pts = np.stack([plydata["vertex"]["x"], plydata["vertex"]["y"], plydata["vertex"]["z"]], axis=1)
     return pts
+
 
 # ---------------------------------------------------------------------------- #
 #                                particle system                               #
 # ---------------------------------------------------------------------------- #
 @ti.data_oriented
 class ParticleSystem:
-    def __init__(self, config, GGUI=False):
-        self.cfg = config
+    def __init__(self, GGUI=False):
         self.GGUI = GGUI
 
         self.domain_start = np.array([0.0, 0.0, 0.0])
-        self.domain_start = np.array(self.cfg.get_cfg("domainStart"))
+        self.domain_start = np.array(get_cfg("domainStart"))
 
         self.domain_end = np.array([1.0, 1.0, 1.0])
-        self.domian_end = np.array(self.cfg.get_cfg("domainEnd"))
+        self.domian_end = np.array(get_cfg("domainEnd"))
 
         self.domain_size = self.domian_end - self.domain_start
 
         self.dim = len(self.domain_size)
         assert self.dim > 1
         # Simulation method
-        self.simulation_method = self.cfg.get_cfg("simulationMethod")
+        self.simulation_method = get_cfg("simulationMethod")
 
         # Material
         self.material_solid = 0
         self.material_fluid = 1
 
         self.particle_radius = 0.01  # particle radius
-        self.particle_radius = self.cfg.get_cfg("particleRadius")
+        self.particle_radius = get_cfg("particleRadius")
 
         self.particle_diameter = 2 * self.particle_radius
         self.support_radius = self.particle_radius * 4.0  # support radius
         self.m_V0 = 0.8 * self.particle_diameter**self.dim
 
-        self.density0 = 1000.0  # reference density
+        self.density0 = get_cfg("density0", 1000.0)  # reference density
+        self.g = np.array(get_cfg("gravitation", [0.0, -9.8, 0.0]))
+        self.viscosity = 0.01  # viscosity
+        self.dt = ti.field(float, shape=())
+        self.dt[None] = get_cfg("timeStepSize", 1e-4)
 
         self.particle_num = ti.field(int, shape=())
 
@@ -107,8 +122,6 @@ class ParticleSystem:
         print("grid size: ", self.grid_num)
         self.padding = self.grid_size
 
-
-
         # # # # All objects id and its particle num
         self.object_collection = dict()
         self.object_id_rigid_body = set()
@@ -117,7 +130,7 @@ class ParticleSystem:
         #                                load particles                                #
         # ---------------------------------------------------------------------------- #
         self.fluid_particle_num = 0
-        fluid_particle_cfgs = self.cfg.config.get("FluidParticles", [])
+        fluid_particle_cfgs = meta.config.config.get("FluidParticles", [])
         self.fluid_particles = []
         for i, cfg_i in enumerate(fluid_particle_cfgs):
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
@@ -126,16 +139,15 @@ class ParticleSystem:
         self.particle_num[None] += self.fluid_particle_num
 
         self.solid_particle_num = 0
-        solid_particle_cfgs = self.cfg.config.get("SolidParticles", [])
+        solid_particle_cfgs = meta.config.config.get("SolidParticles", [])
         self.solid_particles = []
         for i, cfg_i in enumerate(solid_particle_cfgs):
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
             self.solid_particles.append(f)
             self.solid_particle_num += f.shape[0]
         self.particle_num[None] += self.solid_particle_num
-        
-        self.particle_max_num = self.particle_num[None]
 
+        self.particle_max_num = self.particle_num[None]
 
         # Particle num of each grid
         self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
@@ -157,7 +169,7 @@ class ParticleSystem:
         self.color = ti.Vector.field(3, dtype=int, shape=self.particle_max_num)
         self.is_dynamic = ti.field(dtype=int, shape=self.particle_max_num)
 
-        if self.cfg.get_cfg("simulationMethod") == 4:
+        if get_cfg("simulationMethod") == 4:
             self.dfsph_factor = ti.field(dtype=float, shape=self.particle_max_num)
             self.density_adv = ti.field(dtype=float, shape=self.particle_max_num)
 
@@ -175,7 +187,7 @@ class ParticleSystem:
         self.color_buffer = ti.Vector.field(3, dtype=int, shape=self.particle_max_num)
         self.is_dynamic_buffer = ti.field(dtype=int, shape=self.particle_max_num)
 
-        if self.cfg.get_cfg("simulationMethod") == 4:
+        if get_cfg("simulationMethod") == 4:
             self.dfsph_factor_buffer = ti.field(dtype=float, shape=self.particle_max_num)
             self.density_adv_buffer = ti.field(dtype=float, shape=self.particle_max_num)
 
@@ -183,7 +195,6 @@ class ParticleSystem:
         self.grid_ids = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
-
 
         # ========== Initialize particles ==========#
         # initialize fluid particles
@@ -199,8 +210,8 @@ class ParticleSystem:
         for i in range(len(self.solid_particles)):
             f = self.solid_particles[i]
             self.all_solid_list.append(f)
-        self.all_par = np.concatenate(self.all_fluid_list+self.all_solid_list, axis=0)
-    
+        self.all_par = np.concatenate(self.all_fluid_list + self.all_solid_list, axis=0)
+
         self.x.from_numpy(self.all_par)
         self.x_0.from_numpy(self.all_par)
         self.m_V.fill(self.m_V0)
@@ -216,13 +227,12 @@ class ParticleSystem:
 
     @ti.kernel
     def init_solid_particles(self):
-        for i in range(self.fluid_particle_num, self.fluid_particle_num+self.solid_particle_num):
+        for i in range(self.fluid_particle_num, self.fluid_particle_num + self.solid_particle_num):
             self.is_dynamic[i] = 0
             self.material[i] = self.material_solid
 
-
     def build_solver(self):
-        solver_type = self.cfg.get_cfg("simulationMethod")
+        solver_type = get_cfg("simulationMethod")
         # if solver_type == 0:
         #     return WCSPHSolver(self)
         if solver_type == 4:
@@ -324,26 +334,20 @@ class ParticleSystem:
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
 
+
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
 # ---------------------------------------------------------------------------- #
+
 
 @ti.data_oriented
 class SPHBase:
     def __init__(self, particle_system):
         self.ps = particle_system
-        self.g = ti.Vector([0.0, -9.81, 0.0])  # Gravity
-        if self.ps.dim == 2:
-            self.g = ti.Vector([0.0, -9.81])
-        self.g = np.array(self.ps.cfg.get_cfg("gravitation"))
-
-        self.viscosity = 0.01  # viscosity
-
-        self.density_0 = 1000.0  # reference density
-        self.density_0 = self.ps.cfg.get_cfg("density0")
-
-        self.dt = ti.field(float, shape=())
-        self.dt[None] = 1e-4
+        self.g = self.ps.g
+        self.viscosity = self.ps.viscosity
+        self.density_0 = self.ps.density0
+        self.dt = self.ps.dt
 
     @ti.func
     def cubic_kernel(self, r_norm):
@@ -574,7 +578,7 @@ class SPHBase:
                 if self.ps.object_collection[r_obj_id]["isDynamic"]:
                     R = self.solve_constraints(r_obj_id)
 
-                    if self.ps.cfg.get_cfg("exportObj"):
+                    if get_cfg("exportObj"):
                         # For output obj only: update the mesh
                         cm = self.compute_com_kernel(r_obj_id)
                         ret = (
@@ -610,7 +614,6 @@ class DFSPHSolver(SPHBase):
         super().__init__(particle_system)
 
         self.surface_tension = 0.01
-        self.dt[None] = self.ps.cfg.get_cfg("timeStepSize")
 
         self.enable_divergence_solver = True
 
@@ -1016,16 +1019,15 @@ class DFSPHSolver(SPHBase):
         self.advect()
 
 
-meta.ps = ParticleSystem(meta.config, GGUI=True)
+meta.ps = ParticleSystem(GGUI=True)
+
 
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
 # ---------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
-    config = meta.config
-
-    substeps = config.get_cfg("numberOfStepsPerRenderUpdate")
+    substeps = get_cfg("numberOfStepsPerRenderUpdate")
 
     ps = meta.ps
     solver = ps.build_solver()
@@ -1047,22 +1049,18 @@ def main():
     background_color = (0, 0, 0)  # 0xFFFFFF
     particle_color = (1, 1, 1)
 
-
     # Draw the lines for domain
-    x_max, y_max, z_max = config.get_cfg("domainEnd")
+    x_max, y_max, z_max = get_cfg("domainEnd")
     box_anchors = ti.Vector.field(3, dtype=ti.f32, shape=8)
     box_anchors[0] = ti.Vector([0.0, 0.0, 0.0])
     box_anchors[1] = ti.Vector([0.0, y_max, 0.0])
     box_anchors[2] = ti.Vector([x_max, 0.0, 0.0])
     box_anchors[3] = ti.Vector([x_max, y_max, 0.0])
-
     box_anchors[4] = ti.Vector([0.0, 0.0, z_max])
     box_anchors[5] = ti.Vector([0.0, y_max, z_max])
     box_anchors[6] = ti.Vector([x_max, 0.0, z_max])
     box_anchors[7] = ti.Vector([x_max, y_max, z_max])
-
     box_lines_indices = ti.field(int, shape=(2 * 12))
-
     for i, val in enumerate([0, 1, 0, 2, 1, 3, 2, 3, 4, 5, 4, 6, 5, 7, 6, 7, 0, 4, 1, 5, 2, 6, 3, 7]):
         box_lines_indices[i] = val
 
@@ -1083,6 +1081,7 @@ def main():
         canvas.scene(scene)
         cnt += 1
         window.show()
+
 
 if __name__ == "__main__":
     main()
