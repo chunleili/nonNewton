@@ -1248,7 +1248,7 @@ def filedialog():
     from tkinter import filedialog
 
     root = tk.Tk()
-    root.filename = filedialog.askopenfilename(initialdir="data/scenes", title="Select a File")
+    root.filename = filedialog.askopenfilename(initialdir=sph_root_path+"/data/scenes", title="Select a File")
     filename = root.filename
     root.destroy()  # close the window
     print("Open scene file: ", filename)
