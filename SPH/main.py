@@ -8,7 +8,7 @@ from functools import reduce
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
-sph_root_path = os.path.dirname(__file__)
+sph_root_path = os.path.dirname(os.path.abspath(__file__))
 
 
 # ---------------------------------------------------------------------------- #
