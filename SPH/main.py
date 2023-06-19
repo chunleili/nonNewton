@@ -3,12 +3,17 @@ import argparse
 import taichi as ti
 import numpy as np
 import json
-import trimesh as tm
+import trimesh
+import meshio
 from functools import reduce
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
 sph_root_path = os.path.dirname(os.path.abspath(__file__))
+
+# ---------------------------------------------------------------------------- #
+#                                      io                                      #
+# ---------------------------------------------------------------------------- #
 
 
 # ---------------------------------------------------------------------------- #
@@ -427,14 +432,14 @@ class ParticleSystem:
 
     def load_rigid_body(self, rigid_body):
         obj_id = rigid_body["objectId"]
-        # mesh = tm.load(rigid_body["geometryFile"])
-        mesh = tm.load(sph_root_path + rigid_body["geometryFile"])
+        # mesh = trimesh.load(rigid_body["geometryFile"])
+        mesh = trimesh.load(sph_root_path + rigid_body["geometryFile"])
         mesh.apply_scale(rigid_body["scale"])
         offset = np.array(rigid_body["translation"])
 
         angle = rigid_body["rotationAngle"] / 360 * 2 * 3.1415926
         direction = rigid_body["rotationAxis"]
-        rot_matrix = tm.transformations.rotation_matrix(angle, direction, mesh.vertices.mean(axis=0))
+        rot_matrix = trimesh.transformations.rotation_matrix(angle, direction, mesh.vertices.mean(axis=0))
         mesh.apply_transform(rot_matrix)
         mesh.vertices += offset
 
@@ -443,7 +448,7 @@ class ParticleSystem:
         rigid_body["mesh"] = mesh_backup
         rigid_body["restPosition"] = mesh_backup.vertices
         rigid_body["restCenterOfMass"] = mesh_backup.vertices.mean(axis=0)
-        is_success = tm.repair.fill_holes(mesh)
+        is_success = trimesh.repair.fill_holes(mesh)
         # print("Is the mesh successfully repaired? ", is_success)
         voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter)
         voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter).fill()
