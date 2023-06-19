@@ -1250,7 +1250,7 @@ class DFSPHSolver(SPHBase):
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
 # ---------------------------------------------------------------------------- #
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
     config = meta.config
     scene_path = meta.scene_path
@@ -1353,3 +1353,6 @@ if __name__ == "__main__":
         # if cnt > 6000:
         #     break
         window.show()
+
+if __name__ == "__main__":
+    main()
