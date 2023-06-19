@@ -58,18 +58,11 @@ def points_from_volume(mesh, particle_seperation=0.02):
     point_cloud = mesh_vox.points
     return point_cloud
 
-# bodies = meta.config.config.get("FluidBodies",[])
-# unitbox = sph_root_path + "/data/models/UnitBox.obj"
-def read_fluid_body(geometryFile, particle_diameter):
-    mesh = trimesh.load(geometryFile)
-    pts = points_from_volume(mesh, particle_diameter)
-    return pts
 
 def read_ply_particles(geometryFile):
     plydata = plyfile.PlyData.read(geometryFile)
     pts = np.stack([plydata['vertex']['x'], plydata['vertex']['y'], plydata['vertex']['z']], axis=1)
     return pts
-
 
 # ---------------------------------------------------------------------------- #
 #                                particle system                               #
@@ -117,7 +110,7 @@ class ParticleSystem:
 
 
         # # # # All objects id and its particle num
-        # self.object_collection = dict()
+        self.object_collection = dict()
         self.object_id_rigid_body = set()
 
         # ---------------------------------------------------------------------------- #
@@ -132,6 +125,15 @@ class ParticleSystem:
             self.fluid_particle_num += f.shape[0]
         self.particle_num[None] += self.fluid_particle_num
 
+        self.solid_particle_num = 0
+        solid_particle_cfgs = self.cfg.config.get("SolidParticles", [])
+        self.solid_particles = []
+        for i, cfg_i in enumerate(solid_particle_cfgs):
+            f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            self.solid_particles.append(f)
+            self.solid_particle_num += f.shape[0]
+        self.particle_num[None] += self.solid_particle_num
+        
         self.particle_max_num = self.particle_num[None]
 
 
@@ -184,15 +186,23 @@ class ParticleSystem:
 
 
         # ========== Initialize particles ==========#
+        # initialize fluid particles
         self.all_fluid_list = []
         for i in range(len(self.fluid_particles)):
             f = self.fluid_particles[i]
             self.all_fluid_list.append(f)
 
-        self.all_fluid_np = np.concatenate(self.all_fluid_list, axis=0)
-            
-        self.x.from_numpy(self.all_fluid_np)
-        self.x_0.from_numpy(self.all_fluid_np)
+        # self.all_fluid_np = np.concatenate(self.all_fluid_list, axis=0)
+
+        # initialize solid particles
+        self.all_solid_list = []
+        for i in range(len(self.solid_particles)):
+            f = self.solid_particles[i]
+            self.all_solid_list.append(f)
+        self.all_par = np.concatenate(self.all_fluid_list+self.all_solid_list, axis=0)
+    
+        self.x.from_numpy(self.all_par)
+        self.x_0.from_numpy(self.all_par)
         self.m_V.fill(self.m_V0)
         self.m.fill(self.m_V0 * 1000.0)
         self.density.fill(self.density0)
@@ -200,6 +210,16 @@ class ParticleSystem:
         self.material.fill(self.material_fluid)
         self.color.fill(0)
         self.is_dynamic.fill(1)
+
+        if self.solid_particle_num > 0:
+            self.init_solid_particles()
+
+    @ti.kernel
+    def init_solid_particles(self):
+        for i in range(self.fluid_particle_num, self.fluid_particle_num+self.solid_particle_num):
+            self.is_dynamic[i] = 0
+            self.material[i] = self.material_solid
+
 
     def build_solver(self):
         solver_type = self.cfg.get_cfg("simulationMethod")
@@ -304,11 +324,9 @@ class ParticleSystem:
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
 
-
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
 # ---------------------------------------------------------------------------- #
-
 
 @ti.data_oriented
 class SPHBase:
