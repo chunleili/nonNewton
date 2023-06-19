@@ -11,6 +11,44 @@ ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
 sph_root_path = os.path.dirname(os.path.abspath(__file__))
 
+class Meta:
+    ...
+
+meta = Meta()
+
+
+# ---------------------------------------------------------------------------- #
+#                                read json scene                               #
+# ---------------------------------------------------------------------------- #
+
+def filedialog():
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.filename = filedialog.askopenfilename(initialdir=sph_root_path+"/data/scenes", title="Select a File")
+    filename = root.filename
+    root.destroy()  # close the window
+    print("Open scene file: ", filename)
+    return filename
+
+meta.scene_path = filedialog()
+
+
+class SimConfig:
+    def __init__(self, scene_path) -> None:
+        self.config = None
+        with open(scene_path, "r") as f:
+            self.config = json.load(f)
+        print(json.dumps(self.config, indent=2))
+
+    def get_cfg(self, name, default=None):
+        if name not in self.config["Configuration"]:
+            return default
+        else:
+            return self.config["Configuration"][name]
+
+meta.config = SimConfig(meta.scene_path)
 # ---------------------------------------------------------------------------- #
 #                                      io                                      #
 # ---------------------------------------------------------------------------- #
@@ -512,22 +550,6 @@ class ParticleSystem:
             color_arr,
         )
 
-
-# ---------------------------------------------------------------------------- #
-#                                   SimConfig                                  #
-# ---------------------------------------------------------------------------- #
-class SimConfig:
-    def __init__(self, scene_file_path) -> None:
-        self.config = None
-        with open(scene_file_path, "r") as f:
-            self.config = json.load(f)
-        print(json.dumps(self.config, indent=2))
-
-    def get_cfg(self, name, default=None):
-        if name not in self.config["Configuration"]:
-            return default
-        else:
-            return self.config["Configuration"][name]
 
 
 # ---------------------------------------------------------------------------- #
@@ -1223,19 +1245,6 @@ class DFSPHSolver(SPHBase):
         self.advect()
 
 
-# ---------------------------------------------------------------------------- #
-#                                   filediag                                   #
-# ---------------------------------------------------------------------------- #
-def filedialog():
-    import tkinter as tk
-    from tkinter import filedialog
-
-    root = tk.Tk()
-    root.filename = filedialog.askopenfilename(initialdir=sph_root_path+"/data/scenes", title="Select a File")
-    filename = root.filename
-    root.destroy()  # close the window
-    print("Open scene file: ", filename)
-    return filename
 
 
 # ---------------------------------------------------------------------------- #
@@ -1243,13 +1252,8 @@ def filedialog():
 # ---------------------------------------------------------------------------- #
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SPH Taichi")
-    parser.add_argument("--scene_file", default="", help="scene file")
-    args = parser.parse_args()
-    if args.scene_file == "":
-        scene_path = filedialog()
-    else:
-        scene_path = args.scene_file
-    config = SimConfig(scene_file_path=scene_path)
+    config = meta.config
+    scene_path = meta.scene_path
     scene_name = scene_path.split("/")[-1].split(".")[0]
 
     substeps = config.get_cfg("numberOfStepsPerRenderUpdate")
