@@ -16,10 +16,10 @@
 		"exportPly": false,
 		"exportObj": false
 	},
-	"FluidBodies": [
+	"FluidParticles": [
 		{
             "objectId": 0,
-			"geometryFile": "./data/models/tomato-fluid-dense.ply",
+			"geometryFile": "./data/models/cube.ply",
 			"with_user_data": true
 		}
 	]

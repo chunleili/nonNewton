@@ -5,6 +5,7 @@ import numpy as np
 import json
 import trimesh
 import meshio
+import plyfile
 from functools import reduce
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
@@ -52,6 +53,22 @@ meta.config = SimConfig(meta.scene_path)
 # ---------------------------------------------------------------------------- #
 #                                      io                                      #
 # ---------------------------------------------------------------------------- #
+def points_from_volume(mesh, particle_seperation=0.02):
+    mesh_vox = mesh.voxelized(pitch=particle_seperation).fill()
+    point_cloud = mesh_vox.points
+    return point_cloud
+
+# bodies = meta.config.config.get("FluidBodies",[])
+# unitbox = sph_root_path + "/data/models/UnitBox.obj"
+def read_fluid_body(geometryFile, particle_diameter):
+    mesh = trimesh.load(geometryFile)
+    pts = points_from_volume(mesh, particle_diameter)
+    return pts
+
+def read_ply_particles(geometryFile):
+    plydata = plyfile.PlyData.read(geometryFile)
+    pts = np.stack([plydata['vertex']['x'], plydata['vertex']['y'], plydata['vertex']['z']], axis=1)
+    return pts
 
 
 # ---------------------------------------------------------------------------- #
@@ -87,6 +104,8 @@ class ParticleSystem:
         self.support_radius = self.particle_radius * 4.0  # support radius
         self.m_V0 = 0.8 * self.particle_diameter**self.dim
 
+        self.density0 = 1000.0  # reference density
+
         self.particle_num = ti.field(int, shape=())
 
         # Grid related properties
@@ -95,52 +114,26 @@ class ParticleSystem:
         print("grid size: ", self.grid_num)
         self.padding = self.grid_size
 
-        # All objects id and its particle num
-        self.object_collection = dict()
+
+
+        # # # # All objects id and its particle num
+        # self.object_collection = dict()
         self.object_id_rigid_body = set()
 
-        # ========== Compute number of particles ==========#
-        #### Process Fluid Blocks ####
-        fluid_blocks = self.cfg.config.get("FluidBlocks",[])
-        fluid_particle_num = 0
-        for fluid in fluid_blocks:
-            particle_num = self.compute_cube_particle_num(fluid["start"], fluid["end"])
-            fluid["particleNum"] = particle_num
-            self.object_collection[fluid["objectId"]] = fluid
-            fluid_particle_num += particle_num
+        # ---------------------------------------------------------------------------- #
+        #                                load particles                                #
+        # ---------------------------------------------------------------------------- #
+        self.fluid_particle_num = 0
+        fluid_particle_cfgs = self.cfg.config.get("FluidParticles", [])
+        self.fluid_particles = []
+        for i, cfg_i in enumerate(fluid_particle_cfgs):
+            f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            self.fluid_particles.append(f)
+            self.fluid_particle_num += f.shape[0]
+        self.particle_num[None] += self.fluid_particle_num
 
-        #### Process Rigid Blocks ####
-        rigid_blocks = self.cfg.config.get("RigidBlocks",[]) 
-        rigid_particle_num = 0
-        for rigid in rigid_blocks:
-            particle_num = self.compute_cube_particle_num(rigid["start"], rigid["end"])
-            rigid["particleNum"] = particle_num
-            self.object_collection[rigid["objectId"]] = rigid
-            rigid_particle_num += particle_num
+        self.particle_max_num = self.particle_num[None]
 
-        #### Process Rigid Bodies ####
-        rigid_bodies = self.cfg.config.get("RigidBodies",[]) 
-        for rigid_body in rigid_bodies:
-            voxelized_points_np = self.load_rigid_body(rigid_body)
-            rigid_body["particleNum"] = voxelized_points_np.shape[0]
-            rigid_body["voxelizedPoints"] = voxelized_points_np
-            self.object_collection[rigid_body["objectId"]] = rigid_body
-            rigid_particle_num += voxelized_points_np.shape[0]
-
-        self.fluid_particle_num = fluid_particle_num
-        self.solid_particle_num = rigid_particle_num
-        self.particle_max_num = fluid_particle_num + rigid_particle_num
-        self.num_rigid_bodies = len(rigid_blocks) + len(rigid_bodies)
-
-        #### TODO: Handle the Particle Emitter ####
-        # self.particle_max_num += emitted particles
-        print(f"Current particle num: {self.particle_num[None]}, Particle max num: {self.particle_max_num}")
-
-        # ========== Allocate memory ==========#
-        # Rigid body properties
-        if self.num_rigid_bodies > 0:
-            # TODO: Here we actually only need to store rigid boides, however the object id of rigid may not start from 0, so allocate center of mass for all objects
-            self.rigid_rest_cm = ti.Vector.field(self.dim, dtype=float, shape=self.num_rigid_bodies + len(fluid_blocks))
 
         # Particle num of each grid
         self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
@@ -195,75 +188,18 @@ class ParticleSystem:
             self.color_vis_buffer = ti.Vector.field(3, dtype=float, shape=self.particle_max_num)
 
         # ========== Initialize particles ==========#
-
-        # Fluid block
-        for fluid in fluid_blocks:
-            obj_id = fluid["objectId"]
-            offset = np.array(fluid["translation"])
-            start = np.array(fluid["start"]) + offset
-            end = np.array(fluid["end"]) + offset
-            scale = np.array(fluid["scale"])
-            velocity = fluid["velocity"]
-            density = fluid["density"]
-            color = fluid["color"]
-            self.add_cube(
-                object_id=obj_id,
-                lower_corner=start,
-                cube_size=(end - start) * scale,
-                velocity=velocity,
-                density=density,
-                is_dynamic=1,  # enforce fluid dynamic
-                color=color,
-                material=1,
-            )  # 1 indicates fluid
-
-        # TODO: Handle rigid block
-        # Rigid block
-        for rigid in rigid_blocks:
-            obj_id = rigid["objectId"]
-            offset = np.array(rigid["translation"])
-            start = np.array(rigid["start"]) + offset
-            end = np.array(rigid["end"]) + offset
-            scale = np.array(rigid["scale"])
-            velocity = rigid["velocity"]
-            density = rigid["density"]
-            color = rigid["color"]
-            is_dynamic = rigid["isDynamic"]
-            self.add_cube(
-                object_id=obj_id,
-                lower_corner=start,
-                cube_size=(end - start) * scale,
-                velocity=velocity,
-                density=density,
-                is_dynamic=is_dynamic,
-                color=color,
-                material=0,
-            )  # 1 indicates solid
-
-        # Rigid bodies
-        for rigid_body in rigid_bodies:
-            obj_id = rigid_body["objectId"]
-            self.object_id_rigid_body.add(obj_id)
-            num_particles_obj = rigid_body["particleNum"]
-            voxelized_points_np = rigid_body["voxelizedPoints"]
-            is_dynamic = rigid_body["isDynamic"]
-            if is_dynamic:
-                velocity = np.array(rigid_body["velocity"], dtype=np.float32)
-            else:
-                velocity = np.array([0.0 for _ in range(self.dim)], dtype=np.float32)
-            density = rigid_body["density"]
-            color = np.array(rigid_body["color"], dtype=np.int32)
-            self.add_particles(
-                obj_id,
-                num_particles_obj,
-                np.array(voxelized_points_np, dtype=np.float32),  # position
-                np.stack([velocity for _ in range(num_particles_obj)]),  # velocity
-                density * np.ones(num_particles_obj, dtype=np.float32),  # density
-                np.zeros(num_particles_obj, dtype=np.float32),  # pressure
-                np.array([0 for _ in range(num_particles_obj)], dtype=np.int32),  # material is solid
-                is_dynamic * np.ones(num_particles_obj, dtype=np.int32),  # is_dynamic
-                np.stack([color for _ in range(num_particles_obj)]),
-            )  # color
+        for i in range(len(self.fluid_particles)):
+            f = self.fluid_particles[i]
+            
+            self.x.from_numpy(f)
+            self.x_0.from_numpy(f)
+            self.m_V.fill(self.m_V0)
+            self.m.fill(self.m_V0 * 1000.0)
+            self.density.fill(self.density0)
+            self.pressure.fill(0.0)
+            self.material.fill(self.material_fluid)
+            self.color.fill(0)
+            self.is_dynamic.fill(1)
 
     def build_solver(self):
         solver_type = self.cfg.get_cfg("simulationMethod")
@@ -273,76 +209,6 @@ class ParticleSystem:
             return DFSPHSolver(self)
         else:
             raise NotImplementedError(f"Solver type {solver_type} has not been implemented.")
-
-    @ti.func
-    def add_particle(self, p, obj_id, x, v, density, pressure, material, is_dynamic, color):
-        self.object_id[p] = obj_id
-        self.x[p] = x
-        self.x_0[p] = x
-        self.v[p] = v
-        self.density[p] = density
-        self.m_V[p] = self.m_V0
-        self.m[p] = self.m_V0 * density
-        self.pressure[p] = pressure
-        self.material[p] = material
-        self.is_dynamic[p] = is_dynamic
-        self.color[p] = color
-
-    def add_particles(
-        self,
-        object_id: int,
-        new_particles_num: int,
-        new_particles_positions: ti.types.ndarray(),
-        new_particles_velocity: ti.types.ndarray(),
-        new_particle_density: ti.types.ndarray(),
-        new_particle_pressure: ti.types.ndarray(),
-        new_particles_material: ti.types.ndarray(),
-        new_particles_is_dynamic: ti.types.ndarray(),
-        new_particles_color: ti.types.ndarray(),
-    ):
-        self._add_particles(
-            object_id,
-            new_particles_num,
-            new_particles_positions,
-            new_particles_velocity,
-            new_particle_density,
-            new_particle_pressure,
-            new_particles_material,
-            new_particles_is_dynamic,
-            new_particles_color,
-        )
-
-    @ti.kernel
-    def _add_particles(
-        self,
-        object_id: int,
-        new_particles_num: int,
-        new_particles_positions: ti.types.ndarray(),
-        new_particles_velocity: ti.types.ndarray(),
-        new_particle_density: ti.types.ndarray(),
-        new_particle_pressure: ti.types.ndarray(),
-        new_particles_material: ti.types.ndarray(),
-        new_particles_is_dynamic: ti.types.ndarray(),
-        new_particles_color: ti.types.ndarray(),
-    ):
-        for p in range(self.particle_num[None], self.particle_num[None] + new_particles_num):
-            v = ti.Vector.zero(float, self.dim)
-            x = ti.Vector.zero(float, self.dim)
-            for d in ti.static(range(self.dim)):
-                v[d] = new_particles_velocity[p - self.particle_num[None], d]
-                x[d] = new_particles_positions[p - self.particle_num[None], d]
-            self.add_particle(
-                p,
-                object_id,
-                x,
-                v,
-                new_particle_density[p - self.particle_num[None]],
-                new_particle_pressure[p - self.particle_num[None]],
-                new_particles_material[p - self.particle_num[None]],
-                new_particles_is_dynamic[p - self.particle_num[None]],
-                ti.Vector([new_particles_color[p - self.particle_num[None], i] for i in range(3)]),
-            )
-        self.particle_num[None] += new_particles_num
 
     @ti.func
     def pos_to_index(self, pos):
@@ -437,119 +303,6 @@ class ParticleSystem:
             for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
-
-    @ti.kernel
-    def copy_to_numpy(self, np_arr: ti.types.ndarray(), src_arr: ti.template()):
-        for i in range(self.particle_num[None]):
-            np_arr[i] = src_arr[i]
-
-    def copy_to_vis_buffer(self, invisible_objects=[]):
-        if len(invisible_objects) != 0:
-            self.x_vis_buffer.fill(0.0)
-            self.color_vis_buffer.fill(0.0)
-        for obj_id in self.object_collection:
-            if obj_id not in invisible_objects:
-                self._copy_to_vis_buffer(obj_id)
-
-    @ti.kernel
-    def _copy_to_vis_buffer(self, obj_id: int):
-        assert self.GGUI
-        # FIXME: make it equal to actual particle num
-        for i in range(self.particle_max_num):
-            if self.object_id[i] == obj_id:
-                self.x_vis_buffer[i] = self.x[i]
-                self.color_vis_buffer[i] = self.color[i] / 255.0
-
-    def dump(self, obj_id):
-        np_object_id = self.object_id.to_numpy()
-        mask = (np_object_id == obj_id).nonzero()
-        np_x = self.x.to_numpy()[mask]
-        np_v = self.v.to_numpy()[mask]
-
-        return {"position": np_x, "velocity": np_v}
-
-    def load_rigid_body(self, rigid_body):
-        obj_id = rigid_body["objectId"]
-        # mesh = trimesh.load(rigid_body["geometryFile"])
-        mesh = trimesh.load(sph_root_path + rigid_body["geometryFile"])
-        mesh.apply_scale(rigid_body["scale"])
-        offset = np.array(rigid_body["translation"])
-
-        angle = rigid_body["rotationAngle"] / 360 * 2 * 3.1415926
-        direction = rigid_body["rotationAxis"]
-        rot_matrix = trimesh.transformations.rotation_matrix(angle, direction, mesh.vertices.mean(axis=0))
-        mesh.apply_transform(rot_matrix)
-        mesh.vertices += offset
-
-        # Backup the original mesh for exporting obj
-        mesh_backup = mesh.copy()
-        rigid_body["mesh"] = mesh_backup
-        rigid_body["restPosition"] = mesh_backup.vertices
-        rigid_body["restCenterOfMass"] = mesh_backup.vertices.mean(axis=0)
-        is_success = trimesh.repair.fill_holes(mesh)
-        # print("Is the mesh successfully repaired? ", is_success)
-        voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter)
-        voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter).fill()
-        # voxelized_mesh = mesh.voxelized(pitch=self.particle_diameter).hollow()
-        # voxelized_mesh.show()
-        voxelized_points_np = voxelized_mesh.points
-        print(f"rigid body {obj_id} num: {voxelized_points_np.shape[0]}")
-
-        return voxelized_points_np
-
-    def compute_cube_particle_num(self, start, end):
-        num_dim = []
-        for i in range(self.dim):
-            num_dim.append(np.arange(start[i], end[i], self.particle_diameter))
-        return reduce(lambda x, y: x * y, [len(n) for n in num_dim])
-
-    def add_cube(
-        self,
-        object_id,
-        lower_corner,
-        cube_size,
-        material,
-        is_dynamic,
-        color=(0, 0, 0),
-        density=None,
-        pressure=None,
-        velocity=None,
-    ):
-        num_dim = []
-        for i in range(self.dim):
-            num_dim.append(np.arange(lower_corner[i], lower_corner[i] + cube_size[i], self.particle_diameter))
-        num_new_particles = reduce(lambda x, y: x * y, [len(n) for n in num_dim])
-        print("particle num ", num_new_particles)
-
-        new_positions = np.array(np.meshgrid(*num_dim, sparse=False, indexing="ij"), dtype=np.float32)
-        new_positions = new_positions.reshape(-1, reduce(lambda x, y: x * y, list(new_positions.shape[1:]))).transpose()
-        print("new position shape ", new_positions.shape)
-        if velocity is None:
-            velocity_arr = np.full_like(new_positions, 0, dtype=np.float32)
-        else:
-            velocity_arr = np.array([velocity for _ in range(num_new_particles)], dtype=np.float32)
-
-        material_arr = np.full_like(np.zeros(num_new_particles, dtype=np.int32), material)
-        is_dynamic_arr = np.full_like(np.zeros(num_new_particles, dtype=np.int32), is_dynamic)
-        color_arr = np.stack([np.full_like(np.zeros(num_new_particles, dtype=np.int32), c) for c in color], axis=1)
-        density_arr = np.full_like(
-            np.zeros(num_new_particles, dtype=np.float32), density if density is not None else 1000.0
-        )
-        pressure_arr = np.full_like(
-            np.zeros(num_new_particles, dtype=np.float32), pressure if pressure is not None else 0.0
-        )
-        self.add_particles(
-            object_id,
-            num_new_particles,
-            new_positions,
-            velocity_arr,
-            density_arr,
-            pressure_arr,
-            material_arr,
-            is_dynamic_arr,
-            color_arr,
-        )
-
 
 
 # ---------------------------------------------------------------------------- #
@@ -1245,7 +998,7 @@ class DFSPHSolver(SPHBase):
         self.advect()
 
 
-
+meta.ps = ParticleSystem(meta.config, GGUI=True)
 
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
@@ -1253,21 +1006,10 @@ class DFSPHSolver(SPHBase):
 def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
     config = meta.config
-    scene_path = meta.scene_path
-    scene_name = scene_path.split("/")[-1].split(".")[0]
 
     substeps = config.get_cfg("numberOfStepsPerRenderUpdate")
-    output_frames = config.get_cfg("exportFrame")
-    output_interval = int(0.016 / config.get_cfg("timeStepSize"))
-    output_ply = config.get_cfg("exportPly")
-    output_obj = config.get_cfg("exportObj")
-    series_prefix = "{}_output/particle_object_{}.ply".format(scene_name, "{}")
-    if output_frames:
-        os.makedirs(f"{scene_name}_output_img", exist_ok=True)
-    if output_ply:
-        os.makedirs(f"{scene_name}_output", exist_ok=True)
 
-    ps = ParticleSystem(config, GGUI=True)
+    ps = meta.ps
     solver = ps.build_solver()
     solver.initialize()
 
@@ -1287,10 +1029,6 @@ def main():
     background_color = (0, 0, 0)  # 0xFFFFFF
     particle_color = (1, 1, 1)
 
-    # Invisible objects
-    invisible_objects = config.get_cfg("invisibleObjects")
-    if not invisible_objects:
-        invisible_objects = []
 
     # Draw the lines for domain
     x_max, y_max, z_max = config.get_cfg("domainEnd")
@@ -1311,47 +1049,16 @@ def main():
         box_lines_indices[i] = val
 
     cnt = 0
-    cnt_ply = 0
-
     while window.running:
         for i in range(substeps):
             solver.step()
-        ps.copy_to_vis_buffer(invisible_objects=invisible_objects)
-        if ps.dim == 2:
-            canvas.set_background_color(background_color)
-            canvas.circles(ps.x_vis_buffer, radius=ps.particle_radius, color=particle_color)
-        elif ps.dim == 3:
-            camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
-            scene.set_camera(camera)
-
-            scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
-            scene.particles(ps.x_vis_buffer, radius=ps.particle_radius, per_vertex_color=ps.color_vis_buffer)
-
-            scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
-            canvas.scene(scene)
-
-        if output_frames:
-            if cnt % output_interval == 0:
-                window.write_image(f"{scene_name}_output_img/{cnt:06}.png")
-
-        if cnt % output_interval == 0:
-            if output_ply:
-                obj_id = 0
-                obj_data = ps.dump(obj_id=obj_id)
-                np_pos = obj_data["position"]
-                writer = ti.tools.PLYWriter(num_vertices=ps.object_collection[obj_id]["particleNum"])
-                writer.add_vertex_pos(np_pos[:, 0], np_pos[:, 1], np_pos[:, 2])
-                writer.export_frame_ascii(cnt_ply, series_prefix.format(0))
-            if output_obj:
-                for r_body_id in ps.object_id_rigid_body:
-                    with open(f"{scene_name}_output/obj_{r_body_id}_{cnt_ply:06}.obj", "w") as f:
-                        e = ps.object_collection[r_body_id]["mesh"].export(file_type="obj")
-                        f.write(e)
-            cnt_ply += 1
-
+        camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
+        scene.set_camera(camera)
+        scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
+        scene.particles(ps.x, radius=ps.particle_radius, color=particle_color)
+        scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
+        canvas.scene(scene)
         cnt += 1
-        # if cnt > 6000:
-        #     break
         window.show()
 
 if __name__ == "__main__":
