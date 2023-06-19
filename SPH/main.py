@@ -19,6 +19,8 @@ class Meta:
 
 meta = Meta()
 
+SOLID = 0
+FLUID = 1
 
 # ---------------------------------------------------------------------------- #
 #                                read json scene                               #
@@ -111,8 +113,8 @@ class ParticleSystem:
         self.simulation_method = get_cfg("simulationMethod")
 
         # Material
-        self.SOLID_MATERIAL = 0
-        self.FLUID_MATERIAL = 1
+        # SOLID = 0
+        # FLUID = 1
 
         self.particle_radius = get_cfg("particleRadius", 0.01)
 
@@ -230,7 +232,7 @@ class ParticleSystem:
         self.m.fill(self.m_V0 * 1000.0)
         self.density.fill(self.density0)
         self.pressure.fill(0.0)
-        self.material.fill(self.FLUID_MATERIAL)
+        self.material.fill(FLUID)
         self.color.fill(0)
         self.is_dynamic.fill(1)
 
@@ -241,7 +243,7 @@ class ParticleSystem:
     def init_solid_particles(self):
         for i in range(self.fluid_particle_num, self.fluid_particle_num + self.solid_particle_num):
             self.is_dynamic[i] = 0
-            self.material[i] = self.SOLID_MATERIAL
+            self.material[i] = SOLID
 
     @ti.func
     def pos_to_index(self, pos):
@@ -257,11 +259,11 @@ class ParticleSystem:
 
     @ti.func
     def is_static_rigid_body(self, p):
-        return self.material[p] == self.SOLID_MATERIAL and (not self.is_dynamic[p])
+        return self.material[p] == SOLID and (not self.is_dynamic[p])
 
     @ti.func
     def is_dynamic_rigid_body(self, p):
-        return self.material[p] == self.SOLID_MATERIAL and self.is_dynamic[p]
+        return self.material[p] == SOLID and self.is_dynamic[p]
 
     @ti.kernel
     def update_grid_id(self):
@@ -437,7 +439,7 @@ class SPHBase:
 
     @ti.func
     def compute_boundary_volume_task(self, p_i, p_j, delta: ti.template()):
-        if meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        if meta.ps.material[p_j] == SOLID:
             delta += self.cubic_kernel((meta.ps.x[p_i] - meta.ps.x[p_j]).norm())
 
     @ti.kernel
@@ -593,7 +595,7 @@ class SPHBase:
                         meta.ps.object_collection[r_obj_id]["mesh"].vertices = cm.to_numpy() + ret.T
 
                     # self.compute_rigid_collision()
-                    self.enforce_boundary_3D(meta.ps.SOLID_MATERIAL)
+                    self.enforce_boundary_3D(SOLID)
 
     def step(self):
         meta.ps.initialize_particle_system()
@@ -601,9 +603,9 @@ class SPHBase:
         self.substep()
         self.solve_rigid_body()
         if meta.ps.dim == 2:
-            self.enforce_boundary_2D(meta.ps.FLUID_MATERIAL)
+            self.enforce_boundary_2D(FLUID)
         elif meta.ps.dim == 3:
-            self.enforce_boundary_3D(meta.ps.FLUID_MATERIAL)
+            self.enforce_boundary_3D(FLUID)
 
 
 # ---------------------------------------------------------------------------- #
@@ -630,11 +632,11 @@ class DFSPHSolver(SPHBase):
     @ti.func
     def compute_densities_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.ps.x[p_i]
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             x_j = meta.ps.x[p_j]
             ret += meta.ps.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             x_j = meta.ps.x[p_j]
@@ -644,7 +646,7 @@ class DFSPHSolver(SPHBase):
     def compute_densities(self):
         # for p_i in range(meta.ps.particle_num[None]):
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             meta.ps.density[p_i] = meta.ps.m_V[p_i] * self.cubic_kernel(0.0)
             den = 0.0
@@ -657,7 +659,7 @@ class DFSPHSolver(SPHBase):
         x_i = meta.ps.x[p_i]
 
         ############## Surface Tension ###############
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             diameter2 = meta.ps.particle_diameter * meta.ps.particle_diameter
             x_j = meta.ps.x[p_j]
@@ -681,7 +683,7 @@ class DFSPHSolver(SPHBase):
         r = x_i - x_j
         v_xy = (meta.ps.v[p_i] - meta.ps.v[p_j]).dot(r)
 
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             f_v = (
                 d
                 * self.viscosity
@@ -691,7 +693,7 @@ class DFSPHSolver(SPHBase):
                 * self.cubic_kernel_derivative(r)
             )
             ret += f_v
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             boundary_viscosity = 0.0
             # Boundary neighbors
             ## Akinci2012
@@ -717,7 +719,7 @@ class DFSPHSolver(SPHBase):
             # Add body force
             d_v = ti.Vector(self.g)
             meta.ps.acceleration[p_i] = d_v
-            if meta.ps.material[p_i] == meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] == FLUID:
                 meta.ps.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
                 meta.ps.acceleration[p_i] = d_v
 
@@ -733,7 +735,7 @@ class DFSPHSolver(SPHBase):
     @ti.kernel
     def compute_DFSPH_factor(self):
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             sum_grad_p_k = 0.0
             grad_p_i = ti.Vector([0.0 for _ in range(meta.ps.dim)])
@@ -758,13 +760,13 @@ class DFSPHSolver(SPHBase):
 
     @ti.func
     def compute_DFSPH_factor_task(self, p_i, p_j, ret: ti.template()):
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             grad_p_j = -meta.ps.m_V[p_j] * self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j])
             ret[3] += grad_p_j.norm_sqr()  # sum_grad_p_k
             for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             grad_p_j = -meta.ps.m_V[p_j] * self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j])
@@ -774,7 +776,7 @@ class DFSPHSolver(SPHBase):
     @ti.kernel
     def compute_density_change(self):
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             ret = ti.Struct(density_adv=0.0, num_neighbors=0)
             meta.ps.for_all_neighbors(p_i, self.compute_density_change_task, ret)
@@ -797,12 +799,12 @@ class DFSPHSolver(SPHBase):
     def compute_density_change_task(self, p_i, p_j, ret: ti.template()):
         v_i = meta.ps.v[p_i]
         v_j = meta.ps.v[p_j]
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             ret.density_adv += meta.ps.m_V[p_j] * (v_i - v_j).dot(
                 self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j])
             )
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             ret.density_adv += meta.ps.m_V[p_j] * (v_i - v_j).dot(
@@ -815,7 +817,7 @@ class DFSPHSolver(SPHBase):
     @ti.kernel
     def compute_density_adv(self):
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             delta = 0.0
             meta.ps.for_all_neighbors(p_i, self.compute_density_adv_task, delta)
@@ -826,10 +828,10 @@ class DFSPHSolver(SPHBase):
     def compute_density_adv_task(self, p_i, p_j, ret: ti.template()):
         v_i = meta.ps.v[p_i]
         v_j = meta.ps.v[p_j]
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             ret += meta.ps.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j]))
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             ret += meta.ps.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j]))
@@ -838,14 +840,14 @@ class DFSPHSolver(SPHBase):
     def compute_density_error(self, offset: float) -> float:
         density_error = 0.0
         for I in ti.grouped(meta.ps.x):
-            if meta.ps.material[I] == meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[I] == FLUID:
                 density_error += self.density_0 * meta.ps.density_adv[I] - offset
         return density_error
 
     @ti.kernel
     def multiply_time_step(self, field: ti.template(), time_step: float):
         for I in ti.grouped(meta.ps.x):
-            if meta.ps.material[I] == meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[I] == FLUID:
                 field[I] *= time_step
 
     def divergence_solve(self):
@@ -890,7 +892,7 @@ class DFSPHSolver(SPHBase):
     def divergence_solver_iteration_kernel(self):
         # Perform Jacobi iteration
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             # evaluate rhs
             b_i = meta.ps.density_adv[p_i]
@@ -903,7 +905,7 @@ class DFSPHSolver(SPHBase):
 
     @ti.func
     def divergence_solver_iteration_task(self, p_i, p_j, ret: ti.template()):
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             b_j = meta.ps.density_adv[p_j]
             k_j = b_j * meta.ps.dfsph_factor[p_j]
@@ -913,7 +915,7 @@ class DFSPHSolver(SPHBase):
             if ti.abs(k_sum) > self.m_eps:
                 grad_p_j = -meta.ps.m_V[p_j] * self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j])
                 ret.dv -= self.dt[None] * k_sum * grad_p_j
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(ret.k_i) > self.m_eps:
@@ -966,7 +968,7 @@ class DFSPHSolver(SPHBase):
     def pressure_solve_iteration_kernel(self):
         # Compute pressure forces
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] != meta.ps.FLUID_MATERIAL:
+            if meta.ps.material[p_i] != FLUID:
                 continue
             # Evaluate rhs
             b_i = meta.ps.density_adv[p_i] - 1.0
@@ -978,7 +980,7 @@ class DFSPHSolver(SPHBase):
 
     @ti.func
     def pressure_solve_iteration_task(self, p_i, p_j, k_i: ti.template()):
-        if meta.ps.material[p_j] == meta.ps.FLUID_MATERIAL:
+        if meta.ps.material[p_j] == FLUID:
             # Fluid neighbors
             b_j = meta.ps.density_adv[p_j] - 1.0
             k_j = b_j * meta.ps.dfsph_factor[p_j]
@@ -989,7 +991,7 @@ class DFSPHSolver(SPHBase):
                 grad_p_j = -meta.ps.m_V[p_j] * self.cubic_kernel_derivative(meta.ps.x[p_i] - meta.ps.x[p_j])
                 # Directly update velocities instead of storing pressure accelerations
                 meta.ps.v[p_i] -= self.dt[None] * k_sum * grad_p_j  # ki, kj already contain inverse density
-        elif meta.ps.material[p_j] == meta.ps.SOLID_MATERIAL:
+        elif meta.ps.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(k_i) > self.m_eps:
@@ -1007,7 +1009,7 @@ class DFSPHSolver(SPHBase):
     def predict_velocity(self):
         # compute new velocities only considering non-pressure forces
         for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.is_dynamic[p_i] and meta.ps.material[p_i] == meta.ps.FLUID_MATERIAL:
+            if meta.ps.is_dynamic[p_i] and meta.ps.material[p_i] == FLUID:
                 meta.ps.v[p_i] += self.dt[None] * meta.ps.acceleration[p_i]
 
     def substep(self):
