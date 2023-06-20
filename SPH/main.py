@@ -405,10 +405,7 @@ class SPHBase:
         self.substep()
         # meta.rb.substep()
         # self.copy_rb_pos()
-        if meta.ps.dim == 2:
-            self.enforce_boundary_2D(FLUID)
-        elif meta.ps.dim == 3:
-            self.enforce_boundary_3D(FLUID)
+        self.enforce_boundary_3D(FLUID)
 
     @abstractmethod
     def substep(self):
@@ -525,29 +522,6 @@ class SPHBase:
         # Collision factor, assume roughly (1-c_f)*velocity loss after collision
         c_f = 0.5
         meta.ps.v[p_i] -= (1.0 + c_f) * meta.ps.v[p_i].dot(vec) * vec
-
-    @ti.kernel
-    def enforce_boundary_2D(self, particle_type: int):
-        for p_i in ti.grouped(meta.ps.x):
-            if meta.ps.material[p_i] == particle_type and meta.ps.is_dynamic[p_i]:
-                pos = meta.ps.x[p_i]
-                collision_normal = ti.Vector([0.0, 0.0])
-                if pos[0] > meta.ps.domain_size[0] - meta.ps.padding:
-                    collision_normal[0] += 1.0
-                    meta.ps.x[p_i][0] = meta.ps.domain_size[0] - meta.ps.padding
-                if pos[0] <= meta.ps.padding:
-                    collision_normal[0] += -1.0
-                    meta.ps.x[p_i][0] = meta.ps.padding
-
-                if pos[1] > meta.ps.domain_size[1] - meta.ps.padding:
-                    collision_normal[1] += 1.0
-                    meta.ps.x[p_i][1] = meta.ps.domain_size[1] - meta.ps.padding
-                if pos[1] <= meta.ps.padding:
-                    collision_normal[1] += -1.0
-                    meta.ps.x[p_i][1] = meta.ps.padding
-                collision_normal_length = collision_normal.norm()
-                if collision_normal_length > 1e-6:
-                    self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
     @ti.kernel
     def enforce_boundary_3D(self, particle_type: int):
