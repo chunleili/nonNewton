@@ -277,8 +277,8 @@ class ParticleSystem:
         for id_, phase in meta.phase_info.items():
             start = phase.startnum
             end = start + phase.parnum
-            if phase.is_dynamic:
-                range_assign(start, end, True, self.is_dynamic)
+            if not phase.is_dynamic:
+                range_assign(start, end, 0, self.is_dynamic)
         ...
 
     # ---------------------------------------------------------------------------- #
