@@ -22,7 +22,6 @@ meta = Meta()
 
 FLUID = 0
 SOLID = 1
-DYNAMIC_SOLID = 2
 
 
 # ---------------------------------------------------------------------------- #
@@ -99,7 +98,8 @@ def build_solver():
 class PhaseInfo:
     id: int = 0
     parnum: int = 0
-    material: int = FLUID # 0: fluid, 1: solid, 2: dynamic solid
+    material: int = FLUID
+    is_dynamic: bool = False
     cfg: dict = None
     color: tuple = (0., 0., 0.)
 
@@ -153,13 +153,12 @@ class ParticleSystem:
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
             self.solid_particles.append(f)
             self.solid_particle_num += f.shape[0]
-            is_dynamic = cfg_i.get("isDynamic", 0)
+            is_dynamic = cfg_i.get("isDynamic", False)
             mat = SOLID
             phase_id = cfg_i.get("id", i) + 1000 # static solid phase_id will start from 1000
             if is_dynamic:
                 phase_id = cfg_i.get("id", i) + 2000 # dynamic solid phase_id will start from 2000
-                mat = DYNAMIC_SOLID
-            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=mat, cfg=cfg_i)
+            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=mat, cfg=cfg_i, is_dynamic=is_dynamic)
         self.particle_max_num += self.solid_particle_num
 
         # ---------------------------------------------------------------------------- #
@@ -523,7 +522,7 @@ class SPHBase:
     @ti.kernel
     def copy_rb_pos():
         for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.solid_particle_num):
-            if meta.ps.material[i] == DYNAMIC_SOLID:
+            if meta.ps.material[i] == SOLID and meta.ps.is_dynamic[i]:
                 meta.ps.x[i] = meta.rb.positions[i - meta.ps.fluid_particle_num]
 
     def step(self):
