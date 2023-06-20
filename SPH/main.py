@@ -111,7 +111,8 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
 # ---------------------------------------------------------------------------- #
 @ti.data_oriented
 class RigidBody:
-    def __init__(self, init_pos):
+    def __init__(self, init_pos, phase_id):
+        self.phase_id = phase_id
         self.num_particles = init_pos.shape[0]
         self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
@@ -1146,9 +1147,9 @@ def main():
 
     scene = ti.ui.Scene()
     camera = ti.ui.Camera()
-    camera.position(5.5, 2.5, 4.0)
+    camera.position(3, 1.5, 2.3)
     camera.up(0.0, 1.0, 0.0)
-    camera.lookat(-1.0, 0.0, 0.0)
+    camera.lookat(-3.4, -1, -1.7)
     camera.fov(70)
     scene.set_camera(camera)
 
@@ -1161,15 +1162,23 @@ def main():
     box_anchors, box_lines_indices = make_doaminbox()
 
     cnt = 0
-    meta.paused = False
+    meta.paused = True
+    meta.step_num = 0
     while window.running:
         for e in window.get_events(ti.ui.PRESS):
             if e.key == ti.ui.SPACE:
                 meta.paused = not meta.paused
                 print("paused:", meta.paused)
+            if e.key == "f":
+                print("Step once, step: ", meta.step_num)
+                solver.step()
+                meta.step_num += 1
         if not meta.paused:
             solver.step()
+            meta.step_num += 1
 
+        # print(camera.curr_position)
+        # print(camera.curr_lookat)
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.RMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
