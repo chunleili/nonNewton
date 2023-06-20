@@ -21,7 +21,7 @@ meta = Meta()
 
 SOLID = 0
 FLUID = 1
-
+DYNAMIC_SOLID = 2
 # ---------------------------------------------------------------------------- #
 #                                read json scene                               #
 # ---------------------------------------------------------------------------- #
@@ -1095,9 +1095,9 @@ def main():
     for i, val in enumerate([0, 1, 0, 2, 1, 3, 2, 3, 4, 5, 4, 6, 5, 7, 6, 7, 0, 4, 1, 5, 2, 6, 3, 7]):
         box_lines_indices[i] = val
 
-    rb_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
-    rb = RigidBody(rb_pos)
-    rb.rotation(60, rb.positions)
+    # rb_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
+    # rb = RigidBody(rb_pos)
+    # rb.rotation(60, rb.positions)
 
     cnt = 0
     meta.paused = True
@@ -1107,13 +1107,13 @@ def main():
                 meta.paused = not meta.paused
                 print("paused:", meta.paused)
         if not meta.paused:
-            # solver.step()
-            rb.substep()
+            solver.step()
+            # rb.substep()
 
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
-        scene.particles(rb.positions, radius=ps.particle_radius, color=particle_color)
+        scene.particles(meta.ps.x, radius=ps.particle_radius, color=particle_color)
         scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
         canvas.scene(scene)
         cnt += 1
