@@ -64,6 +64,14 @@ def get_cfg(name, default=None):
     return meta.config.get_cfg(name, default)
 
 
+def get_fluid_cfg():
+    return meta.config.config.get("FluidParticles", [])
+
+
+def get_solid_cfg():
+    return meta.config.config.get("SolidParticles", [])
+
+
 # ---------------------------------------------------------------------------- #
 #                                      io                                      #
 # ---------------------------------------------------------------------------- #
@@ -103,13 +111,14 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
 # ---------------------------------------------------------------------------- #
 @dataclass
 class PhaseInfo:
-    id: int = 0
+    uid: int = 0
     parnum: int = 0
     startnum: int = 0  # the start index of this phase in the particle array
     material: int = FLUID
     is_dynamic: bool = False
     cfg: dict = None
     color: tuple = (0.0, 0.0, 0.0)
+    pos: np.ndarray = None
 
 
 meta.phase_info = dict()
@@ -150,47 +159,73 @@ class ParticleSystem:
     # ---------------------------------------------------------------------------- #
     #                                load particles                                #
     # ---------------------------------------------------------------------------- #
+    # load all particles info into phase_info, alway first fluid, second static solid, third dynamic solid.
     def load_particles(self):
-        self.particle_max_num = 0
+        # fluid particles
         self.fluid_particle_num = 0
-        fluid_particle_cfgs = meta.config.config.get("FluidParticles", [])
-        self.fluid_particles = []
-        for i, cfg_i in enumerate(fluid_particle_cfgs):
-            f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-            self.fluid_particles.append(f)
-            self.fluid_particle_num += f.shape[0]
-            phase_id = cfg_i.get("id", i)
+        cfgs = get_fluid_cfg()
+        cnt = 0
+        for cfg_i in cfgs:
+            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            parnum = pos.shape[0]
+            phase_id = cfg_i.get("id", cnt)
+            cnt += 1
             meta.phase_info[phase_id] = PhaseInfo(
-                id=phase_id,
-                parnum=f.shape[0],
+                uid=phase_id,
+                parnum=parnum,
+                startnum=self.fluid_particle_num,
                 material=FLUID,
                 cfg=cfg_i,
                 is_dynamic=True,
-                startnum=self.fluid_particle_num,
+                pos=pos,
             )
-        self.particle_max_num += self.fluid_particle_num
+            self.fluid_particle_num += parnum
 
-        self.solid_particle_num = 0
-        solid_particle_cfgs = meta.config.config.get("SolidParticles", [])
-        self.solid_particles = []
-        for i, cfg_i in enumerate(solid_particle_cfgs):
-            f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-            self.solid_particles.append(f)
-            self.solid_particle_num += f.shape[0]
+        # static solid particles
+        self.static_solid_particle_num = 0
+        cfgs = get_solid_cfg()
+        cnt = 0
+        for cfg_i in cfgs:
+            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            parnum = pos.shape[0]
             is_dynamic = cfg_i.get("isDynamic", False)
-            mat = SOLID
-            phase_id = cfg_i.get("id", i) + 1000  # static solid phase_id will start from 1000
+            if not is_dynamic:
+                phase_id = cfg_i.get("id", cnt) + 1000  # static solid phase_id starts from 1000
+                cnt += 1
+                meta.phase_info[phase_id] = PhaseInfo(
+                    uid=phase_id,
+                    parnum=pos.shape[0],
+                    startnum=self.fluid_particle_num + self.static_solid_particle_num,
+                    material=SOLID,
+                    cfg=cfg_i,
+                    is_dynamic=is_dynamic,
+                    pos=pos,
+                )
+                self.static_solid_particle_num += parnum
+
+        # dynamic solid particles
+        self.dynamic_solid_particle_num = 0
+        cfgs = get_solid_cfg()
+        cnt = 0
+        for cfg_i in cfgs:
+            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            parnum = pos.shape[0]
+            is_dynamic = cfg_i.get("isDynamic", False)
             if is_dynamic:
-                phase_id = cfg_i.get("id", i) + 2000  # dynamic solid phase_id will start from 2000
-            meta.phase_info[phase_id] = PhaseInfo(
-                id=phase_id,
-                parnum=f.shape[0],
-                material=mat,
-                cfg=cfg_i,
-                is_dynamic=is_dynamic,
-                startnum=self.fluid_particle_num + self.solid_particle_num,
-            )
-        self.particle_max_num += self.solid_particle_num
+                phase_id = cfg_i.get("id", cnt) + 2000  # dynamic solid phase_id starts from 2000
+                meta.phase_info[phase_id] = PhaseInfo(
+                    uid=phase_id,
+                    parnum=pos.shape[0],
+                    startnum=self.fluid_particle_num + self.static_solid_particle_num + self.dynamic_solid_particle_num,
+                    material=SOLID,
+                    cfg=cfg_i,
+                    is_dynamic=is_dynamic,
+                    pos=pos,
+                )
+                self.dynamic_solid_particle_num += parnum
+
+        self.solid_particle_num = self.static_solid_particle_num + self.dynamic_solid_particle_num
+        self.particle_max_num = self.fluid_particle_num + self.solid_particle_num
 
     # ---------------------------------------------------------------------------- #
     #                             create taichi fields                             #
@@ -247,18 +282,8 @@ class ParticleSystem:
     #                             initialize particles                             #
     # ---------------------------------------------------------------------------- #
     def initialize_particles(self):
-        # initialize fluid particles
-        self.all_fluid_list = []
-        for i in range(len(self.fluid_particles)):
-            f = self.fluid_particles[i]
-            self.all_fluid_list.append(f)
-
-        # initialize solid particles
-        self.all_solid_list = []
-        for i in range(len(self.solid_particles)):
-            f = self.solid_particles[i]
-            self.all_solid_list.append(f)
-        self.all_par = np.concatenate(self.all_fluid_list + self.all_solid_list, axis=0)
+        # join the pos arr
+        self.all_par = np.concatenate([phase.pos for phase in meta.phase_info.values()], axis=0)
 
         self.x.from_numpy(self.all_par)
         self.x_0.from_numpy(self.all_par)
@@ -420,11 +445,6 @@ class SPHBase:
 
     def initialize(self):
         meta.ps.initialize_particle_system()
-
-        rb_init_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
-        meta.rb = RigidBody(rb_init_pos)
-        meta.rb.rotation(60, meta.rb.positions)
-
         self.compute_static_boundary_volume()
         self.compute_moving_boundary_volume()
 
