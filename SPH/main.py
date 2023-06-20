@@ -24,6 +24,13 @@ meta = Meta()
 FLUID = 0
 SOLID = 1
 
+RED = (1, 0, 0)
+GREEN = (0, 1, 0)
+BLUE = (0, 0, 1)
+ORANGE = (1, 0.5, 0)
+WHITE = (1, 1, 1)
+BLACK = (0, 0, 0)
+
 
 # ---------------------------------------------------------------------------- #
 #                                read json scene                               #
@@ -221,7 +228,7 @@ class PhaseInfo:
     material: int = FLUID
     is_dynamic: bool = False
     cfg: dict = None
-    color: tuple = (0.0, 0.0, 0.0)
+    color: tuple = WHITE
     pos: np.ndarray = None
 
 
@@ -230,9 +237,7 @@ meta.phase_info = dict()
 
 @ti.data_oriented
 class ParticleSystem:
-    def __init__(self, GGUI=False):
-        self.GGUI = GGUI
-
+    def __init__(self):
         self.domain_start = np.array([0.0, 0.0, 0.0])
         self.domain_start = np.array(get_cfg("domainStart"))
         self.domain_end = np.array([1.0, 1.0, 1.0])
@@ -285,6 +290,7 @@ class ParticleSystem:
                 cfg=cfg_i,
                 is_dynamic=True,
                 pos=pos,
+                color=cfg_i.get("color", BLUE),
             )
             self.fluid_particle_num += parnum
 
@@ -307,6 +313,7 @@ class ParticleSystem:
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
+                    color=cfg_i.get("color", WHITE),
                 )
                 self.static_solid_particle_num += parnum
 
@@ -328,6 +335,7 @@ class ParticleSystem:
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
+                    color=cfg_i.get("color", ORANGE),
                 )
                 self.dynamic_solid_particle_num += parnum
 
@@ -355,7 +363,7 @@ class ParticleSystem:
         self.density = ti.field(dtype=float, shape=self.particle_max_num)
         self.pressure = ti.field(dtype=float, shape=self.particle_max_num)
         self.material = ti.field(dtype=int, shape=self.particle_max_num)
-        self.color = ti.Vector.field(3, dtype=int, shape=self.particle_max_num)
+        self.color = ti.Vector.field(3, dtype=ti.f32, shape=self.particle_max_num)
         self.is_dynamic = ti.field(dtype=int, shape=self.particle_max_num)
 
         if get_cfg("simulationMethod") == 4:
@@ -373,7 +381,7 @@ class ParticleSystem:
         self.density_buffer = ti.field(dtype=float, shape=self.particle_max_num)
         self.pressure_buffer = ti.field(dtype=float, shape=self.particle_max_num)
         self.material_buffer = ti.field(dtype=int, shape=self.particle_max_num)
-        self.color_buffer = ti.Vector.field(3, dtype=int, shape=self.particle_max_num)
+        self.color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=self.particle_max_num)
         self.is_dynamic_buffer = ti.field(dtype=int, shape=self.particle_max_num)
 
         if get_cfg("simulationMethod") == 4:
@@ -399,26 +407,23 @@ class ParticleSystem:
         self.density.fill(self.density0)
         self.pressure.fill(0.0)
         self.material.fill(FLUID)
-        self.color.fill(0)
+        self.color.fill(WHITE)
         self.is_dynamic.fill(1)
 
-        # init solid
-        if self.solid_particle_num > 0:
-            self.init_solid_particles()
+        for phase in meta.phase_info.values():
+            # assign material, color, is_dynamic, phase_id
+            start = phase.startnum
+            end = start + phase.parnum
+            range_assign(start, end, phase.material, self.material)
+            range_assign(start, end, phase.color, self.color)
+            range_assign(start, end, phase.is_dynamic, self.is_dynamic)
+            range_assign(start, end, phase.uid, self.phase_id)
 
-            for id_, phase in meta.phase_info.items():
-                start = phase.startnum
-                end = start + phase.parnum
-                if not phase.is_dynamic:
-                    range_assign(start, end, 0, self.is_dynamic)
-
-            # init dynamic solid(rigidbodies)
-            for phase in meta.phase_info.values():
-                if phase.material == SOLID and phase.is_dynamic:
-                    rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
-                    rb = RigidBody(rb_init_pos, phase.uid)
-                    meta.rbs.append(rb)
-            meta.num_rigid_bodies = len(meta.rbs)
+            # init rigid bodies
+            if phase.material == SOLID and phase.is_dynamic:
+                rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
+                rb = RigidBody(rb_init_pos, phase.uid)
+                meta.rbs.append(rb)
 
     # ---------------------------------------------------------------------------- #
     #                         utility kernels and functions                        #
@@ -524,7 +529,7 @@ class ParticleSystem:
                     task(p_i, p_j, ret)
 
 
-meta.ps = ParticleSystem(GGUI=True)
+meta.ps = ParticleSystem()
 
 
 @ti.kernel
@@ -1143,6 +1148,11 @@ def main():
     solver = build_solver()
     solver.initialize()
 
+    if get_cfg("noGUI"):
+        for _ in range(get_cfg("maxStep")):
+            solver.step()
+        return
+
     window = ti.ui.Window("SPH", (1024, 1024), show_window=True, vsync=True)
 
     scene = ti.ui.Scene()
@@ -1156,8 +1166,8 @@ def main():
     canvas = window.get_canvas()
     radius = 0.002
     movement_speed = 0.02
-    background_color = (0, 0, 0)  # 0xFFFFFF
-    particle_color = (1, 1, 1)
+    background_color = BLACK
+    particle_color = WHITE
 
     box_anchors, box_lines_indices = make_doaminbox()
 
@@ -1182,7 +1192,8 @@ def main():
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.RMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
-        scene.particles(meta.ps.x, radius=ps.particle_radius, color=particle_color)
+        # scene.particles(meta.ps.x, radius=ps.particle_radius, color=WHITE)
+        scene.particles(meta.ps.x, radius=ps.particle_radius, per_vertex_color=meta.ps.color)
         scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
         canvas.scene(scene)
         cnt += 1
