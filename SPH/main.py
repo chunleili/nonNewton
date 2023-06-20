@@ -142,8 +142,8 @@ class ParticleSystem:
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
             self.fluid_particles.append(f)
             self.fluid_particle_num += f.shape[0]
-            object_id = cfg_i.get("id", i)
-            meta.phase_info[object_id] = PhaseInfo(id=object_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i)
+            phase_id = cfg_i.get("id", i)
+            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i)
         self.particle_max_num += self.fluid_particle_num
 
         self.solid_particle_num = 0
@@ -155,11 +155,11 @@ class ParticleSystem:
             self.solid_particle_num += f.shape[0]
             is_dynamic = cfg_i.get("isDynamic", 0)
             mat = SOLID
-            object_id = cfg_i.get("id", i) + 1000 # static solid object_id will start from 1000
+            phase_id = cfg_i.get("id", i) + 1000 # static solid phase_id will start from 1000
             if is_dynamic:
-                object_id = cfg_i.get("id", i) + 2000 # dynamic solid object_id will start from 2000
+                phase_id = cfg_i.get("id", i) + 2000 # dynamic solid phase_id will start from 2000
                 mat = DYNAMIC_SOLID
-            meta.phase_info[object_id] = PhaseInfo(id=object_id, parnum=f.shape[0], material=mat, cfg=cfg_i)
+            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=mat, cfg=cfg_i)
         self.particle_max_num += self.solid_particle_num
 
         # ---------------------------------------------------------------------------- #
@@ -172,7 +172,7 @@ class ParticleSystem:
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
         # Particle related properties
-        self.object_id = ti.field(dtype=int, shape=self.particle_max_num)
+        self.phase_id = ti.field(dtype=int, shape=self.particle_max_num)
         self.x = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.x_0 = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.v = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
@@ -190,7 +190,7 @@ class ParticleSystem:
             self.density_adv = ti.field(dtype=float, shape=self.particle_max_num)
 
         # Buffer for sort
-        self.object_id_buffer = ti.field(dtype=int, shape=self.particle_max_num)
+        self.phase_id_buffer = ti.field(dtype=int, shape=self.particle_max_num)
         self.x_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.x_0_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.v_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
@@ -220,8 +220,6 @@ class ParticleSystem:
         for i in range(len(self.fluid_particles)):
             f = self.fluid_particles[i]
             self.all_fluid_list.append(f)
-
-        # self.all_fluid_np = np.concatenate(self.all_fluid_list, axis=0)
 
         # initialize solid particles
         self.all_solid_list = []
@@ -296,7 +294,7 @@ class ParticleSystem:
         for I in ti.grouped(self.grid_ids):
             new_index = self.grid_ids_new[I]
             self.grid_ids_buffer[new_index] = self.grid_ids[I]
-            self.object_id_buffer[new_index] = self.object_id[I]
+            self.phase_id_buffer[new_index] = self.phase_id[I]
             self.x_0_buffer[new_index] = self.x_0[I]
             self.x_buffer[new_index] = self.x[I]
             self.v_buffer[new_index] = self.v[I]
@@ -315,7 +313,7 @@ class ParticleSystem:
 
         for I in ti.grouped(self.x):
             self.grid_ids[I] = self.grid_ids_buffer[I]
-            self.object_id[I] = self.object_id_buffer[I]
+            self.phase_id[I] = self.phase_id_buffer[I]
             self.x_0[I] = self.x_0_buffer[I]
             self.x[I] = self.x_buffer[I]
             self.v[I] = self.v_buffer[I]
