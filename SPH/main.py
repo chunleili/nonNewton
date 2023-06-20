@@ -92,6 +92,12 @@ def build_solver():
         raise NotImplementedError(f"Solver type {solver_type} has not been implemented.")
 
 
+@ti.kernel
+def range_assign(start: int, end: int, value: ti.template(), container: ti.template()):
+    for i in range(start, end):
+        container[i] = value
+
+
 # ---------------------------------------------------------------------------- #
 #                                particle system                               #
 # ---------------------------------------------------------------------------- #
@@ -99,12 +105,15 @@ def build_solver():
 class PhaseInfo:
     id: int = 0
     parnum: int = 0
+    startnum: int = 0  # the start index of this phase in the particle array
     material: int = FLUID
     is_dynamic: bool = False
     cfg: dict = None
-    color: tuple = (0., 0., 0.)
+    color: tuple = (0.0, 0.0, 0.0)
+
 
 meta.phase_info = dict()
+
 
 @ti.data_oriented
 class ParticleSystem:
@@ -132,11 +141,11 @@ class ParticleSystem:
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.padding = self.grid_size
 
-        self.load_particles() # must be called before create_taichi_fields because it will set self.particle_max_num
+        self.load_particles()  # must be called before create_taichi_fields because it will set self.particle_max_num
 
-        self.create_taichi_fields() 
+        self.create_taichi_fields()
 
-        self.initialize_particles() # fill the taichi fields
+        self.initialize_particles()  # fill the taichi fields
 
     # ---------------------------------------------------------------------------- #
     #                                load particles                                #
@@ -151,7 +160,14 @@ class ParticleSystem:
             self.fluid_particles.append(f)
             self.fluid_particle_num += f.shape[0]
             phase_id = cfg_i.get("id", i)
-            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i, is_dynamic=True)
+            meta.phase_info[phase_id] = PhaseInfo(
+                id=phase_id,
+                parnum=f.shape[0],
+                material=FLUID,
+                cfg=cfg_i,
+                is_dynamic=True,
+                startnum=self.fluid_particle_num,
+            )
         self.particle_max_num += self.fluid_particle_num
 
         self.solid_particle_num = 0
@@ -163,10 +179,17 @@ class ParticleSystem:
             self.solid_particle_num += f.shape[0]
             is_dynamic = cfg_i.get("isDynamic", False)
             mat = SOLID
-            phase_id = cfg_i.get("id", i) + 1000 # static solid phase_id will start from 1000
+            phase_id = cfg_i.get("id", i) + 1000  # static solid phase_id will start from 1000
             if is_dynamic:
-                phase_id = cfg_i.get("id", i) + 2000 # dynamic solid phase_id will start from 2000
-            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=mat, cfg=cfg_i, is_dynamic=is_dynamic)
+                phase_id = cfg_i.get("id", i) + 2000  # dynamic solid phase_id will start from 2000
+            meta.phase_info[phase_id] = PhaseInfo(
+                id=phase_id,
+                parnum=f.shape[0],
+                material=mat,
+                cfg=cfg_i,
+                is_dynamic=is_dynamic,
+                startnum=self.fluid_particle_num + self.solid_particle_num,
+            )
         self.particle_max_num += self.solid_particle_num
 
     # ---------------------------------------------------------------------------- #
@@ -249,6 +272,14 @@ class ParticleSystem:
 
         if self.solid_particle_num > 0:
             self.init_solid_particles()
+
+        # fill the is_dynamic
+        for id_, phase in meta.phase_info.items():
+            start = phase.startnum
+            end = start + phase.parnum
+            if phase.is_dynamic:
+                range_assign(start, end, True, self.is_dynamic)
+        ...
 
     # ---------------------------------------------------------------------------- #
     #                         utility kernels and functions                        #
@@ -353,7 +384,9 @@ class ParticleSystem:
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
 
+
 meta.ps = ParticleSystem(GGUI=True)
+
 
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
@@ -365,7 +398,7 @@ class SPHBase:
         self.viscosity = meta.ps.viscosity
         self.density_0 = meta.ps.density0
         self.dt = meta.ps.dt
-    
+
     def step(self):
         meta.ps.initialize_particle_system()
         self.compute_moving_boundary_volume()
@@ -376,7 +409,7 @@ class SPHBase:
             self.enforce_boundary_2D(FLUID)
         elif meta.ps.dim == 3:
             self.enforce_boundary_3D(FLUID)
-    
+
     @abstractmethod
     def substep(self):
         pass
@@ -397,7 +430,6 @@ class SPHBase:
 
         self.compute_static_boundary_volume()
         self.compute_moving_boundary_volume()
-
 
     @ti.func
     def cubic_kernel(self, r_norm):
@@ -892,7 +924,7 @@ class DFSPHSolver(SPHBase):
         # TODO: warm start
         # Compute velocity of density change
         self.compute_density_change()
-        inv_dt = 1 / self.dt[None]
+        inv_dt = 1.0 / self.dt[None]
         self.multiply_time_step(meta.ps.dfsph_factor, inv_dt)
 
         m_iterations_v = 0
@@ -1077,6 +1109,7 @@ def make_doaminbox():
     for i, val in enumerate([0, 1, 0, 2, 1, 3, 2, 3, 4, 5, 4, 6, 5, 7, 6, 7, 0, 4, 1, 5, 2, 6, 3, 7]):
         box_lines_indices[i] = val
     return box_anchors, box_lines_indices
+
 
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
