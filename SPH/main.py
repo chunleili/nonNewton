@@ -6,6 +6,7 @@ import json
 import trimesh
 import meshio
 import plyfile
+from dataclasses import dataclass
 from functools import reduce
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
@@ -19,14 +20,14 @@ class Meta:
 
 meta = Meta()
 
-SOLID = 0
-FLUID = 1
+FLUID = 0
+SOLID = 1
 DYNAMIC_SOLID = 2
+
+
 # ---------------------------------------------------------------------------- #
 #                                read json scene                               #
 # ---------------------------------------------------------------------------- #
-
-
 def filedialog():
     import tkinter as tk
     from tkinter import filedialog
@@ -94,6 +95,16 @@ def build_solver():
 # ---------------------------------------------------------------------------- #
 #                                particle system                               #
 # ---------------------------------------------------------------------------- #
+@dataclass
+class PhaseInfo:
+    id: int = 0
+    parnum: int = 0
+    material: int = FLUID # 0: fluid, 1: solid, 2: dynamic solid
+    cfg: dict = None
+    color: tuple = (0., 0., 0.)
+
+meta.phase_info = dict()
+
 @ti.data_oriented
 class ParticleSystem:
     def __init__(self, GGUI=False):
@@ -101,48 +112,29 @@ class ParticleSystem:
 
         self.domain_start = np.array([0.0, 0.0, 0.0])
         self.domain_start = np.array(get_cfg("domainStart"))
-
         self.domain_end = np.array([1.0, 1.0, 1.0])
         self.domian_end = np.array(get_cfg("domainEnd"))
-
         self.domain_size = self.domian_end - self.domain_start
-
         self.dim = len(self.domain_size)
-        assert self.dim > 1
-        # Simulation method
         self.simulation_method = get_cfg("simulationMethod")
-
-        # Material
-        # SOLID = 0
-        # FLUID = 1
-
         self.particle_radius = get_cfg("particleRadius", 0.01)
-
         self.particle_diameter = 2 * self.particle_radius
         self.support_radius = self.particle_radius * 4.0  # support radius
         self.m_V0 = 0.8 * self.particle_diameter**self.dim
-
         self.density0 = get_cfg("density0", 1000.0)  # reference density
         self.g = np.array(get_cfg("gravitation", [0.0, -9.8, 0.0]))
         self.viscosity = 0.01  # viscosity
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
-
-        self.particle_num = ti.field(int, shape=())
-
         # Grid related properties
         self.grid_size = self.support_radius
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
-        print("grid size: ", self.grid_num)
         self.padding = self.grid_size
-
-        # # # # All objects id and its particle num
-        self.object_collection = dict()
-        self.object_id_rigid_body = set()
 
         # ---------------------------------------------------------------------------- #
         #                                load particles                                #
         # ---------------------------------------------------------------------------- #
+        self.particle_max_num = 0
         self.fluid_particle_num = 0
         fluid_particle_cfgs = meta.config.config.get("FluidParticles", [])
         self.fluid_particles = []
@@ -150,7 +142,9 @@ class ParticleSystem:
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
             self.fluid_particles.append(f)
             self.fluid_particle_num += f.shape[0]
-        self.particle_num[None] += self.fluid_particle_num
+            object_id = cfg_i.get("id", i)
+            meta.phase_info[object_id] = PhaseInfo(id=object_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i)
+        self.particle_max_num += self.fluid_particle_num
 
         self.solid_particle_num = 0
         solid_particle_cfgs = meta.config.config.get("SolidParticles", [])
@@ -159,10 +153,18 @@ class ParticleSystem:
             f = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
             self.solid_particles.append(f)
             self.solid_particle_num += f.shape[0]
-        self.particle_num[None] += self.solid_particle_num
+            is_dynamic = cfg_i.get("isDynamic", 0)
+            mat = SOLID
+            object_id = cfg_i.get("id", i) + 1000 # static solid object_id will start from 1000
+            if is_dynamic:
+                object_id = cfg_i.get("id", i) + 2000 # dynamic solid object_id will start from 2000
+                mat = DYNAMIC_SOLID
+            meta.phase_info[object_id] = PhaseInfo(id=object_id, parnum=f.shape[0], material=mat, cfg=cfg_i)
+        self.particle_max_num += self.solid_particle_num
 
-        self.particle_max_num = self.particle_num[None]
-
+        # ---------------------------------------------------------------------------- #
+        #                             create taichi fields                             #
+        # ---------------------------------------------------------------------------- #
         # Particle num of each grid
         self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
         self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
@@ -210,7 +212,9 @@ class ParticleSystem:
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
 
-        # ========== Initialize particles ==========#
+        # ---------------------------------------------------------------------------- #
+        #                             initialize particles                             #
+        # ---------------------------------------------------------------------------- #
         # initialize fluid particles
         self.all_fluid_list = []
         for i in range(len(self.fluid_particles)):
@@ -239,6 +243,9 @@ class ParticleSystem:
         if self.solid_particle_num > 0:
             self.init_solid_particles()
 
+    # ---------------------------------------------------------------------------- #
+    #                         utility kernels and functions                        #
+    # ---------------------------------------------------------------------------- #
     @ti.kernel
     def init_solid_particles(self):
         for i in range(self.fluid_particle_num, self.fluid_particle_num + self.solid_particle_num):
@@ -343,8 +350,6 @@ class ParticleSystem:
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
 # ---------------------------------------------------------------------------- #
-
-
 @ti.data_oriented
 class SPHBase:
     def __init__(self):
@@ -417,14 +422,14 @@ class SPHBase:
 
     def initialize(self):
         meta.ps.initialize_particle_system()
-        for r_obj_id in meta.ps.object_id_rigid_body:
-            self.compute_rigid_rest_cm(r_obj_id)
+
+        rb_init_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
+        meta.rb = RigidBody(rb_init_pos)
+        meta.rb.rotation(60, meta.rb.positions)
+
         self.compute_static_boundary_volume()
         self.compute_moving_boundary_volume()
 
-    @ti.kernel
-    def compute_rigid_rest_cm(self, object_id: int):
-        meta.ps.rigid_rest_cm[object_id] = self.compute_com(object_id)
 
     @ti.kernel
     def compute_static_boundary_volume(self):
@@ -516,16 +521,19 @@ class SPHBase:
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
+    @staticmethod
     @ti.kernel
-    def copy_rb_pos(self):
-        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.rb.num_particles):
-            meta.ps.x[i] = meta.ps.rb.positions[i - meta.ps.fluid_particle_num]
+    def copy_rb_pos():
+        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.solid_particle_num):
+            if meta.ps.material[i] == DYNAMIC_SOLID:
+                meta.ps.x[i] = meta.rb.positions[i - meta.ps.fluid_particle_num]
 
     def step(self):
         meta.ps.initialize_particle_system()
         self.compute_moving_boundary_volume()
         self.substep()
-        # self.solve_rigid_body()
+        # meta.rb.substep()
+        # self.copy_rb_pos()
         if meta.ps.dim == 2:
             self.enforce_boundary_2D(FLUID)
         elif meta.ps.dim == 3:
@@ -638,8 +646,6 @@ class RigidBody:
 # ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
 # ---------------------------------------------------------------------------- #
-
-
 class DFSPHSolver(SPHBase):
     def __init__(self):
         super().__init__()
@@ -1100,7 +1106,7 @@ def main():
     # rb.rotation(60, rb.positions)
 
     cnt = 0
-    meta.paused = True
+    meta.paused = False
     while window.running:
         for e in window.get_events(ti.ui.PRESS):
             if e.key == ti.ui.SPACE:
@@ -1110,7 +1116,7 @@ def main():
             solver.step()
             # rb.substep()
 
-        camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.LMB)
+        camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.RMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
         scene.particles(meta.ps.x, radius=ps.particle_radius, color=particle_color)

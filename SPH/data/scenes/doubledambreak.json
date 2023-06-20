@@ -18,11 +18,9 @@
 	},
 	"FluidParticles": [
 		{
-            "objectId": 0,
 			"geometryFile": "./data/models/cube.ply"
 		},
 		{
-            "objectId": 1,
 			"geometryFile": "./data/models/cube2.ply"
 		}
 	]
