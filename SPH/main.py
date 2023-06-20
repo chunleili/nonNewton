@@ -132,9 +132,16 @@ class ParticleSystem:
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.padding = self.grid_size
 
-        # ---------------------------------------------------------------------------- #
-        #                                load particles                                #
-        # ---------------------------------------------------------------------------- #
+        self.load_particles() # must be called before create_taichi_fields because it will set self.particle_max_num
+
+        self.create_taichi_fields() 
+
+        self.initialize_particles() # fill the taichi fields
+
+    # ---------------------------------------------------------------------------- #
+    #                                load particles                                #
+    # ---------------------------------------------------------------------------- #
+    def load_particles(self):
         self.particle_max_num = 0
         self.fluid_particle_num = 0
         fluid_particle_cfgs = meta.config.config.get("FluidParticles", [])
@@ -144,7 +151,7 @@ class ParticleSystem:
             self.fluid_particles.append(f)
             self.fluid_particle_num += f.shape[0]
             phase_id = cfg_i.get("id", i)
-            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i)
+            meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=FLUID, cfg=cfg_i, is_dynamic=True)
         self.particle_max_num += self.fluid_particle_num
 
         self.solid_particle_num = 0
@@ -162,9 +169,10 @@ class ParticleSystem:
             meta.phase_info[phase_id] = PhaseInfo(id=phase_id, parnum=f.shape[0], material=mat, cfg=cfg_i, is_dynamic=is_dynamic)
         self.particle_max_num += self.solid_particle_num
 
-        # ---------------------------------------------------------------------------- #
-        #                             create taichi fields                             #
-        # ---------------------------------------------------------------------------- #
+    # ---------------------------------------------------------------------------- #
+    #                             create taichi fields                             #
+    # ---------------------------------------------------------------------------- #
+    def create_taichi_fields(self):
         # Particle num of each grid
         self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
         self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
@@ -211,9 +219,6 @@ class ParticleSystem:
         self.grid_ids = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
-
-        # initialize particles
-        self.initialize_particles()
 
     # ---------------------------------------------------------------------------- #
     #                             initialize particles                             #
@@ -542,8 +547,6 @@ class SPHBase:
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length)
-
-
 
 
 # ---------------------------------------------------------------------------- #
