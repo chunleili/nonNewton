@@ -8,6 +8,7 @@ import meshio
 import plyfile
 from dataclasses import dataclass
 from functools import reduce
+from abc import abstractmethod
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
@@ -211,9 +212,13 @@ class ParticleSystem:
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
 
-        # ---------------------------------------------------------------------------- #
-        #                             initialize particles                             #
-        # ---------------------------------------------------------------------------- #
+        # initialize particles
+        self.initialize_particles()
+
+    # ---------------------------------------------------------------------------- #
+    #                             initialize particles                             #
+    # ---------------------------------------------------------------------------- #
+    def initialize_particles(self):
         # initialize fluid particles
         self.all_fluid_list = []
         for i in range(len(self.fluid_particles)):
@@ -343,6 +348,7 @@ class ParticleSystem:
                 if p_i[0] != p_j and (self.x[p_i] - self.x[p_j]).norm() < self.support_radius:
                     task(p_i, p_j, ret)
 
+meta.ps = ParticleSystem(GGUI=True)
 
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
@@ -354,6 +360,39 @@ class SPHBase:
         self.viscosity = meta.ps.viscosity
         self.density_0 = meta.ps.density0
         self.dt = meta.ps.dt
+    
+    def step(self):
+        meta.ps.initialize_particle_system()
+        self.compute_moving_boundary_volume()
+        self.substep()
+        # meta.rb.substep()
+        # self.copy_rb_pos()
+        if meta.ps.dim == 2:
+            self.enforce_boundary_2D(FLUID)
+        elif meta.ps.dim == 3:
+            self.enforce_boundary_3D(FLUID)
+    
+    @abstractmethod
+    def substep(self):
+        pass
+
+    @staticmethod
+    @ti.kernel
+    def copy_rb_pos():
+        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.solid_particle_num):
+            if meta.ps.material[i] == SOLID and meta.ps.is_dynamic[i]:
+                meta.ps.x[i] = meta.rb.positions[i - meta.ps.fluid_particle_num]
+
+    def initialize(self):
+        meta.ps.initialize_particle_system()
+
+        rb_init_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
+        meta.rb = RigidBody(rb_init_pos)
+        meta.rb.rotation(60, meta.rb.positions)
+
+        self.compute_static_boundary_volume()
+        self.compute_moving_boundary_volume()
+
 
     @ti.func
     def cubic_kernel(self, r_norm):
@@ -417,17 +456,6 @@ class SPHBase:
         )
         return res
 
-    def initialize(self):
-        meta.ps.initialize_particle_system()
-
-        rb_init_pos = read_ply_particles(sph_root_path + "/data/models/cube.ply")
-        meta.rb = RigidBody(rb_init_pos)
-        meta.rb.rotation(60, meta.rb.positions)
-
-        self.compute_static_boundary_volume()
-        self.compute_moving_boundary_volume()
-
-
     @ti.kernel
     def compute_static_boundary_volume(self):
         for p_i in ti.grouped(meta.ps.x):
@@ -454,9 +482,6 @@ class SPHBase:
             meta.ps.m_V[p_i] = (
                 1.0 / delta * 3.0
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
-
-    def substep(self):
-        pass
 
     @ti.func
     def simulate_collisions(self, p_i, vec):
@@ -518,23 +543,7 @@ class SPHBase:
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length)
 
-    @staticmethod
-    @ti.kernel
-    def copy_rb_pos():
-        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.solid_particle_num):
-            if meta.ps.material[i] == SOLID and meta.ps.is_dynamic[i]:
-                meta.ps.x[i] = meta.rb.positions[i - meta.ps.fluid_particle_num]
 
-    def step(self):
-        meta.ps.initialize_particle_system()
-        self.compute_moving_boundary_volume()
-        self.substep()
-        # meta.rb.substep()
-        # self.copy_rb_pos()
-        if meta.ps.dim == 2:
-            self.enforce_boundary_2D(FLUID)
-        elif meta.ps.dim == 3:
-            self.enforce_boundary_3D(FLUID)
 
 
 # ---------------------------------------------------------------------------- #
@@ -648,14 +657,10 @@ class DFSPHSolver(SPHBase):
         super().__init__()
 
         self.surface_tension = 0.01
-
         self.enable_divergence_solver = True
-
         self.m_max_iterations_v = 100
         self.m_max_iterations = 100
-
         self.m_eps = 1e-5
-
         self.max_error_V = 0.1
         self.max_error = 0.05
 
@@ -1051,9 +1056,6 @@ class DFSPHSolver(SPHBase):
         self.predict_velocity()
         self.pressure_solve()
         self.advect()
-
-
-meta.ps = ParticleSystem(GGUI=True)
 
 
 # ---------------------------------------------------------------------------- #
