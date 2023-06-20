@@ -253,6 +253,9 @@ class ParticleSystem:
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.padding = self.grid_size
 
+        meta.coupling_interval = get_cfg("couplingIntervals", 10)
+        meta.rbs = []
+
         self.load_particles()  # must be called before create_taichi_fields because it will set self.particle_max_num
 
         self.create_taichi_fields()
@@ -398,16 +401,23 @@ class ParticleSystem:
         self.color.fill(0)
         self.is_dynamic.fill(1)
 
+        # init solid
         if self.solid_particle_num > 0:
             self.init_solid_particles()
 
-        # fill the is_dynamic
-        for id_, phase in meta.phase_info.items():
-            start = phase.startnum
-            end = start + phase.parnum
-            if not phase.is_dynamic:
-                range_assign(start, end, 0, self.is_dynamic)
-        ...
+            for id_, phase in meta.phase_info.items():
+                start = phase.startnum
+                end = start + phase.parnum
+                if not phase.is_dynamic:
+                    range_assign(start, end, 0, self.is_dynamic)
+
+            # init dynamic solid(rigidbodies)
+            for phase in meta.phase_info.values():
+                if phase.material == SOLID and phase.is_dynamic:
+                    rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
+                    rb = RigidBody(rb_init_pos, phase.uid)
+                    meta.rbs.append(rb)
+            meta.num_rigid_bodies = len(meta.rbs)
 
     # ---------------------------------------------------------------------------- #
     #                         utility kernels and functions                        #
@@ -516,6 +526,23 @@ class ParticleSystem:
 meta.ps = ParticleSystem(GGUI=True)
 
 
+@ti.kernel
+def range_copy(dst: ti.template(), src: ti.template(), start: int):
+    """
+    将src的内容复制到 dst 的start开始位置
+    """
+    for i in src:
+        dst[start + i] = src[i]
+
+
+# just copy the rigid body position to the particle system
+def oneway_coupling(rb):
+    rb_pos = rb.positions
+    phase_id = rb.phase_id
+    start = meta.phase_info[phase_id].startnum
+    range_copy(meta.ps.x, rb_pos, start)
+
+
 # ---------------------------------------------------------------------------- #
 #                                   SPH Base                                   #
 # ---------------------------------------------------------------------------- #
@@ -528,23 +555,22 @@ class SPHBase:
         self.dt = meta.ps.dt
 
     def step(self):
+        step_num = 0
         meta.ps.initialize_particle_system()
         self.compute_moving_boundary_volume()
         self.substep()
-        # meta.rb.substep()
-        # self.copy_rb_pos()
+
+        if step_num % meta.coupling_interval == 0:  # solid should move slower than fluid
+            for rb in meta.rbs:
+                rb.substep()
+                oneway_coupling(rb)
+
         self.enforce_boundary_3D(FLUID)
+        step_num += 1
 
     @abstractmethod
     def substep(self):
         pass
-
-    @staticmethod
-    @ti.kernel
-    def copy_rb_pos():
-        for i in range(meta.ps.fluid_particle_num, meta.ps.fluid_particle_num + meta.ps.solid_particle_num):
-            if meta.ps.material[i] == SOLID and meta.ps.is_dynamic[i]:
-                meta.ps.x[i] = meta.rb.positions[i - meta.ps.fluid_particle_num]
 
     def initialize(self):
         meta.ps.initialize_particle_system()
