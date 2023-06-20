@@ -1147,10 +1147,10 @@ def main():
 
     scene = ti.ui.Scene()
     camera = ti.ui.Camera()
-    camera.position(3, 1.5, 2.3)
+    camera.position(4, 2, 3)
     camera.up(0.0, 1.0, 0.0)
-    camera.lookat(-3.4, -1, -1.7)
-    camera.fov(70)
+    camera.lookat(-2.3, -0.6, -1.1)
+    camera.fov(45)
     scene.set_camera(camera)
 
     canvas = window.get_canvas()
