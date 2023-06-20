@@ -107,6 +107,109 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
 
 
 # ---------------------------------------------------------------------------- #
+#                                   RigidBody                                  #
+# ---------------------------------------------------------------------------- #
+@ti.data_oriented
+class RigidBody:
+    def __init__(self, init_pos):
+        self.num_particles = init_pos.shape[0]
+        self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.mass_inv = 1.0
+        self.dt = get_cfg("timeStepSize")
+        self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
+        self.radius_vector = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+
+        self.positions.from_numpy(init_pos)
+        self.positions0.from_numpy(init_pos)
+
+        self.compute_radius_vector(self.num_particles, self.positions, self.radius_vector)
+        self.precompute_q_inv(self.num_particles, self.radius_vector, self.q_inv)
+
+    def substep(self):
+        self.shape_matching(
+            self.num_particles,
+            self.positions0,
+            self.positions,
+            self.velocities,
+            self.mass_inv,
+            self.dt,
+            self.q_inv,
+            self.radius_vector,
+        )
+
+    @staticmethod
+    @ti.kernel
+    def shape_matching(
+        num_particles: int,
+        positions0: ti.template(),
+        positions: ti.template(),
+        velocities: ti.template(),
+        mass_inv: ti.f32,
+        dt: ti.f32,
+        q_inv: ti.template(),
+        radius_vector: ti.template(),
+    ):
+        #  update vel and pos firtly
+        gravity = ti.Vector([0.0, -9.8, 0.0])
+        for i in range(num_particles):
+            positions0[i] = positions[i]
+            f = gravity
+            velocities[i] += mass_inv * f * dt
+            positions[i] += velocities[i] * dt
+            if positions[i].y < 0.0:
+                positions[i] = positions0[i]
+                positions[i].y = 0.0
+
+        # compute the new(matched shape) mass center
+        c = ti.Vector([0.0, 0.0, 0.0])
+        for i in range(num_particles):
+            c += positions[i]
+        c /= num_particles
+
+        # compute transformation matrix and extract rotation
+        A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+        for i in range(num_particles):
+            sum1 += (positions[i] - c).outer_product(radius_vector[i])
+        A = sum1 @ q_inv[None]
+
+        R, _ = ti.polar_decompose(A)
+
+        # update velocities and positions
+        for i in range(num_particles):
+            positions[i] = c + R @ radius_vector[i]
+            velocities[i] = (positions[i] - positions0[i]) / dt
+
+    @staticmethod
+    @ti.kernel
+    def compute_radius_vector(num_particles: int, positions: ti.template(), radius_vector: ti.template()):
+        # compute the mass center and radius vector
+        center_mass = ti.Vector([0.0, 0.0, 0.0])
+        for i in range(num_particles):
+            center_mass += positions[i]
+        center_mass /= num_particles
+        for i in range(num_particles):
+            radius_vector[i] = positions[i] - center_mass
+
+    @staticmethod
+    @ti.kernel
+    def precompute_q_inv(num_particles: int, radius_vector: ti.template(), q_inv: ti.template()):
+        res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
+        for i in range(num_particles):
+            res += radius_vector[i].outer_product(radius_vector[i])
+        q_inv[None] = res.inverse()
+
+    @staticmethod
+    @ti.kernel
+    def rotation(angle: ti.f32, positions: ti.template()):
+        theta = angle / 180.0 * np.pi
+        R = ti.Matrix([[ti.cos(theta), -ti.sin(theta), 0.0], [ti.sin(theta), ti.cos(theta), 0.0], [0.0, 0.0, 1.0]])
+        for i in positions:
+            positions[i] = R @ positions[i]
+
+
+# ---------------------------------------------------------------------------- #
 #                                particle system                               #
 # ---------------------------------------------------------------------------- #
 @dataclass
@@ -573,109 +676,6 @@ class SPHBase:
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length)
-
-
-# ---------------------------------------------------------------------------- #
-#                                   RigidBody                                  #
-# ---------------------------------------------------------------------------- #
-@ti.data_oriented
-class RigidBody:
-    def __init__(self, init_pos):
-        self.num_particles = init_pos.shape[0]
-        self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
-        self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
-        self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
-        self.mass_inv = 1.0
-        self.dt = get_cfg("timeStepSize")
-        self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
-        self.radius_vector = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
-
-        self.positions.from_numpy(init_pos)
-        self.positions0.from_numpy(init_pos)
-
-        self.compute_radius_vector(self.num_particles, self.positions, self.radius_vector)
-        self.precompute_q_inv(self.num_particles, self.radius_vector, self.q_inv)
-
-    def substep(self):
-        self.shape_matching(
-            self.num_particles,
-            self.positions0,
-            self.positions,
-            self.velocities,
-            self.mass_inv,
-            self.dt,
-            self.q_inv,
-            self.radius_vector,
-        )
-
-    @staticmethod
-    @ti.kernel
-    def shape_matching(
-        num_particles: int,
-        positions0: ti.template(),
-        positions: ti.template(),
-        velocities: ti.template(),
-        mass_inv: ti.f32,
-        dt: ti.f32,
-        q_inv: ti.template(),
-        radius_vector: ti.template(),
-    ):
-        #  update vel and pos firtly
-        gravity = ti.Vector([0.0, -9.8, 0.0])
-        for i in range(num_particles):
-            positions0[i] = positions[i]
-            f = gravity
-            velocities[i] += mass_inv * f * dt
-            positions[i] += velocities[i] * dt
-            if positions[i].y < 0.0:
-                positions[i] = positions0[i]
-                positions[i].y = 0.0
-
-        # compute the new(matched shape) mass center
-        c = ti.Vector([0.0, 0.0, 0.0])
-        for i in range(num_particles):
-            c += positions[i]
-        c /= num_particles
-
-        # compute transformation matrix and extract rotation
-        A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
-        for i in range(num_particles):
-            sum1 += (positions[i] - c).outer_product(radius_vector[i])
-        A = sum1 @ q_inv[None]
-
-        R, _ = ti.polar_decompose(A)
-
-        # update velocities and positions
-        for i in range(num_particles):
-            positions[i] = c + R @ radius_vector[i]
-            velocities[i] = (positions[i] - positions0[i]) / dt
-
-    @staticmethod
-    @ti.kernel
-    def compute_radius_vector(num_particles: int, positions: ti.template(), radius_vector: ti.template()):
-        # compute the mass center and radius vector
-        center_mass = ti.Vector([0.0, 0.0, 0.0])
-        for i in range(num_particles):
-            center_mass += positions[i]
-        center_mass /= num_particles
-        for i in range(num_particles):
-            radius_vector[i] = positions[i] - center_mass
-
-    @staticmethod
-    @ti.kernel
-    def precompute_q_inv(num_particles: int, radius_vector: ti.template(), q_inv: ti.template()):
-        res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
-        for i in range(num_particles):
-            res += radius_vector[i].outer_product(radius_vector[i])
-        q_inv[None] = res.inverse()
-
-    @staticmethod
-    @ti.kernel
-    def rotation(angle: ti.f32, positions: ti.template()):
-        theta = angle / 180.0 * np.pi
-        R = ti.Matrix([[ti.cos(theta), -ti.sin(theta), 0.0], [ti.sin(theta), ti.cos(theta), 0.0], [0.0, 0.0, 1.0]])
-        for i in positions:
-            positions[i] = R @ positions[i]
 
 
 # ---------------------------------------------------------------------------- #
