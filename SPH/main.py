@@ -162,8 +162,8 @@ class ParticleSystem:
     # load all particles info into phase_info, alway first fluid, second static solid, third dynamic solid.
     def load_particles(self):
         # fluid particles
-        self.fluid_particle_num = 0
         cfgs = get_fluid_cfg()
+        accum_num = 0
         cnt = 0
         for cfg_i in cfgs:
             pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
@@ -173,17 +173,18 @@ class ParticleSystem:
             meta.phase_info[phase_id] = PhaseInfo(
                 uid=phase_id,
                 parnum=parnum,
-                startnum=self.fluid_particle_num,
+                startnum=accum_num,
                 material=FLUID,
                 cfg=cfg_i,
                 is_dynamic=True,
                 pos=pos,
             )
-            self.fluid_particle_num += parnum
+            accum_num += parnum
+        self.fluid_particle_num = accum_num
 
         # static solid particles
-        self.static_solid_particle_num = 0
         cfgs = get_solid_cfg()
+        accum_num = 0
         cnt = 0
         for cfg_i in cfgs:
             pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
@@ -195,17 +196,18 @@ class ParticleSystem:
                 meta.phase_info[phase_id] = PhaseInfo(
                     uid=phase_id,
                     parnum=pos.shape[0],
-                    startnum=self.fluid_particle_num + self.static_solid_particle_num,
+                    startnum=accum_num,
                     material=SOLID,
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
                 )
-                self.static_solid_particle_num += parnum
+                accum_num += parnum
+        self.static_solid_particle_num = accum_num
 
         # dynamic solid particles
-        self.dynamic_solid_particle_num = 0
         cfgs = get_solid_cfg()
+        accum_num = 0
         cnt = 0
         for cfg_i in cfgs:
             pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
@@ -216,13 +218,14 @@ class ParticleSystem:
                 meta.phase_info[phase_id] = PhaseInfo(
                     uid=phase_id,
                     parnum=pos.shape[0],
-                    startnum=self.fluid_particle_num + self.static_solid_particle_num + self.dynamic_solid_particle_num,
+                    startnum=accum_num,
                     material=SOLID,
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
                 )
-                self.dynamic_solid_particle_num += parnum
+                accum_num += parnum
+        self.dynamic_solid_particle_num = accum_num
 
         self.solid_particle_num = self.static_solid_particle_num + self.dynamic_solid_particle_num
         self.particle_max_num = self.fluid_particle_num + self.solid_particle_num
