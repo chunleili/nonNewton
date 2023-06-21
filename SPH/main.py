@@ -153,11 +153,12 @@ class RigidBody:
     def __init__(self, init_pos, phase_id):
         self.phase_id = phase_id
         self.num_particles = init_pos.shape[0]
+        self.dt = meta.parm.dt[None]
+        self.gravity = meta.parm.gravity
+        self.mass_inv = 1.0
         self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
-        self.mass_inv = 1.0
-        self.dt = get_cfg("timeStepSize")
         self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
         self.radius_vector = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
 
@@ -177,7 +178,11 @@ class RigidBody:
             self.dt,
             self.q_inv,
             self.radius_vector,
+            # self.gravity,
         )
+
+    def rotate(self, angle: float):
+        self.rotation(angle, self.positions)
 
     @staticmethod
     @ti.kernel
@@ -186,10 +191,11 @@ class RigidBody:
         positions0: ti.template(),
         positions: ti.template(),
         velocities: ti.template(),
-        mass_inv: ti.f32,
+        mass_inv: float,
         dt: ti.f32,
         q_inv: ti.template(),
         radius_vector: ti.template(),
+        # gravity: ti.template(),
     ):
         #  update vel and pos firtly
         gravity = ti.Vector([0.0, -9.8, 0.0])
@@ -269,10 +275,8 @@ class Parameter:
     """A pure data class storing parameters for simulation"""
 
     def __init__(self):
-        self.domain_start = np.array([0.0, 0.0, 0.0])
-        self.domain_start = np.array(get_cfg("domainStart"))
-        self.domain_end = np.array([1.0, 1.0, 1.0])
-        self.domian_end = np.array(get_cfg("domainEnd"))
+        self.domain_start = np.array(get_cfg("domainStart", [0.0, 0.0, 0.0]))
+        self.domian_end = np.array(get_cfg("domainEnd", [1.0, 1.0, 1.0]))
         self.domain_size = self.domian_end - self.domain_start
         self.dim = len(self.domain_size)
         self.simulation_method = get_cfg("simulationMethod")
@@ -281,7 +285,7 @@ class Parameter:
         self.support_radius = self.particle_radius * 4.0  # support radius
         self.m_V0 = 0.8 * self.particle_diameter**self.dim
         self.density0 = get_cfg("density0", 1000.0)  # reference density
-        self.g = np.array(get_cfg("gravitation", [0.0, -9.8, 0.0]))
+        self.gravity = ti.Vector(get_cfg("gravitation", [0.0, -9.8, 0.0]))
         self.viscosity = 0.01  # viscosity
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
@@ -622,7 +626,7 @@ def oneway_coupling(rb):
 @ti.data_oriented
 class SPHBase:
     def __init__(self):
-        self.g = meta.parm.g
+        self.gravity = meta.parm.gravity
         self.viscosity = meta.parm.viscosity
         self.density_0 = meta.parm.density0
         self.dt = meta.parm.dt
@@ -631,7 +635,8 @@ class SPHBase:
         step_num = 0
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
-        self.substep()
+        if meta.ps.fluid_particle_num > 0:
+            self.substep()
 
         if step_num % meta.parm.coupling_interval == 0:  # solid should move slower than fluid
             for rb in meta.rbs:
@@ -880,7 +885,7 @@ class DFSPHSolver(SPHBase):
                 continue
             ############## Body force ###############
             # Add body force
-            d_v = ti.Vector(self.g)
+            d_v = self.gravity
             meta.pd.acceleration[p_i] = d_v
             if meta.pd.material[p_i] == FLUID:
                 meta.ns.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
