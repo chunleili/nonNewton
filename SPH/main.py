@@ -94,6 +94,13 @@ def read_ply_particles(geometryFile):
     return pts
 
 
+def transform(points: np.ndarray, cfg: dict):
+    mesh = trimesh.Trimesh(vertices=points)
+    trans = cfg.get("translation", [0, 0.1, 0])
+    mesh.apply_translation(trans)
+    return mesh.vertices
+
+
 # ---------------------------------------------------------------------------- #
 #                            other global functions                            #
 # ---------------------------------------------------------------------------- #
@@ -143,6 +150,16 @@ def color_selector(cfg, default=WHITE):
         else:
             res = WHITE
     return res
+
+
+@ti.func
+def is_static_rigid_body(p):
+    return meta.pd.material[p] == SOLID and (not meta.pd.is_dynamic[p])
+
+
+@ti.func
+def is_dynamic_rigid_body(p):
+    return meta.pd.material[p] == SOLID and meta.pd.is_dynamic[p]
 
 
 # ---------------------------------------------------------------------------- #
@@ -579,39 +596,6 @@ class NeighborhoodSearch:
                     task(p_i, p_j, ret)
 
 
-# ---------------------------------------------------------------------------- #
-#                                particle system                               #
-# ---------------------------------------------------------------------------- #
-@ti.data_oriented
-class ParticleSystem:
-    def __init__(self):
-        meta.parm = Parameter()
-        meta.rbs = []
-        (
-            self.particle_max_num,
-            self.fluid_particle_num,
-            self.solid_particle_num,
-            self.static_solid_particle_num,
-            self.dynamic_solid_particle_num,
-        ) = load_particles(meta.phase_info)
-        meta.pd = ParticleData(self.particle_max_num, meta.parm.grid_num)
-        initialize_particles(meta.pd)  # fill the taichi fields
-
-        self.x = meta.pd.x
-        meta.ns = NeighborhoodSearch()
-
-    @ti.func
-    def is_static_rigid_body(self, p):
-        return meta.pd.material[p] == SOLID and (not meta.pd.is_dynamic[p])
-
-    @ti.func
-    def is_dynamic_rigid_body(self, p):
-        return meta.pd.material[p] == SOLID and meta.pd.is_dynamic[p]
-
-
-meta.ps = ParticleSystem()
-
-
 # just copy the rigid body position to the particle system
 def oneway_coupling(rb):
     rb_pos = rb.positions
@@ -635,7 +619,7 @@ class SPHBase:
         step_num = 0
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
-        if meta.ps.fluid_particle_num > 0:
+        if meta.fluid_particle_num > 0:
             self.substep()
 
         if step_num % meta.parm.coupling_interval == 0:  # solid should move slower than fluid
@@ -720,7 +704,7 @@ class SPHBase:
     @ti.kernel
     def compute_static_boundary_volume(self):
         for p_i in ti.grouped(meta.pd.x):
-            if not meta.ps.is_static_rigid_body(p_i):
+            if not is_static_rigid_body(p_i):
                 continue
             delta = self.cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
@@ -736,7 +720,7 @@ class SPHBase:
     @ti.kernel
     def compute_moving_boundary_volume(self):
         for p_i in ti.grouped(meta.pd.x):
-            if not meta.ps.is_dynamic_rigid_body(p_i):
+            if not is_dynamic_rigid_body(p_i):
                 continue
             delta = self.cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
@@ -812,7 +796,6 @@ class DFSPHSolver(SPHBase):
 
     @ti.kernel
     def compute_densities(self):
-        # for p_i in range(meta.ps.particle_num[None]):
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.material[p_i] != FLUID:
                 continue
@@ -874,13 +857,13 @@ class DFSPHSolver(SPHBase):
                 * self.cubic_kernel_derivative(r)
             )
             ret += f_v
-            if meta.ps.is_dynamic_rigid_body(p_j):
+            if is_dynamic_rigid_body(p_j):
                 meta.pd.acceleration[p_j] += -f_v * meta.pd.density[p_i] / meta.pd.density[p_j]
 
     @ti.kernel
     def compute_non_pressure_forces(self):
         for p_i in ti.grouped(meta.pd.x):
-            if meta.ps.is_static_rigid_body(p_i):
+            if is_static_rigid_body(p_i):
                 meta.pd.acceleration[p_i].fill(0.0)
                 continue
             ############## Body force ###############
@@ -896,7 +879,7 @@ class DFSPHSolver(SPHBase):
         # Update position
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.is_dynamic[p_i]:
-                if meta.ps.is_dynamic_rigid_body(p_i):
+                if is_dynamic_rigid_body(p_i):
                     meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
                 meta.pd.x[p_i] += self.dt[None] * meta.pd.v[p_i]
 
@@ -1054,7 +1037,7 @@ class DFSPHSolver(SPHBase):
         self.divergence_solver_iteration_kernel()
         self.compute_density_change()
         density_err = self.compute_density_error(0.0)
-        return density_err / meta.ps.fluid_particle_num
+        return density_err / meta.fluid_particle_num
 
     @ti.kernel
     def divergence_solver_iteration_kernel(self):
@@ -1090,7 +1073,7 @@ class DFSPHSolver(SPHBase):
                 grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
                 vel_change = -self.dt[None] * 1.0 * ret.k_i * grad_p_j
                 ret.dv += vel_change
-                if meta.ps.is_dynamic_rigid_body(p_j):
+                if is_dynamic_rigid_body(p_j):
                     meta.pd.acceleration[p_j] += (
                         -vel_change * (1 / self.dt[None]) * meta.pd.density[p_i] / meta.pd.density[p_j]
                     )
@@ -1130,7 +1113,7 @@ class DFSPHSolver(SPHBase):
         self.pressure_solve_iteration_kernel()
         self.compute_density_adv()
         density_err = self.compute_density_error(self.density_0)
-        return density_err / meta.ps.fluid_particle_num
+        return density_err / meta.fluid_particle_num
 
     @ti.kernel
     def pressure_solve_iteration_kernel(self):
@@ -1168,7 +1151,7 @@ class DFSPHSolver(SPHBase):
                 # Directly update velocities instead of storing pressure accelerations
                 vel_change = -self.dt[None] * 1.0 * k_i * grad_p_j  # kj already contains inverse density
                 meta.pd.v[p_i] += vel_change
-                if meta.ps.is_dynamic_rigid_body(p_j):
+                if is_dynamic_rigid_body(p_j):
                     meta.pd.acceleration[p_j] += (
                         -vel_change * 1.0 / self.dt[None] * meta.pd.density[p_i] / meta.pd.density[p_j]
                     )
@@ -1209,6 +1192,22 @@ def make_doaminbox():
     return box_anchors, box_lines_indices
 
 
+def initialize():
+    meta.parm = Parameter()
+    meta.rbs = []
+    (
+        meta.particle_max_num,
+        meta.fluid_particle_num,
+        meta.solid_particle_num,
+        meta.static_solid_particle_num,
+        meta.dynamic_solid_particle_num,
+    ) = load_particles(meta.phase_info)
+    meta.pd = ParticleData(meta.particle_max_num, meta.parm.grid_num)
+    initialize_particles(meta.pd)  # fill the taichi fields
+
+    meta.ns = NeighborhoodSearch()
+
+
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
 # ---------------------------------------------------------------------------- #
@@ -1216,7 +1215,8 @@ def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
     substeps = get_cfg("numberOfStepsPerRenderUpdate")
 
-    ps = meta.ps
+    initialize()
+
     solver = build_solver()
     solver.initialize()
 
@@ -1264,7 +1264,7 @@ def main():
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.RMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
-        # scene.particles(meta.pd.x, radius=ps.particle_radius, color=WHITE)
+        # scene.particles(meta.pd.x, radius=meta.parm.particle_radius, color=WHITE)
         scene.particles(meta.pd.x, radius=meta.parm.particle_radius, per_vertex_color=meta.pd.color)
         scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
         canvas.scene(scene)
