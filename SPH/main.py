@@ -113,6 +113,29 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
         container[i] = value
 
 
+def color_selector(cfg, default=WHITE):
+    if "color" not in cfg:
+        return default
+    else:
+        res = tuple()
+        c = cfg.get("color", "WHITE")
+        if c == "RED":
+            res = RED
+        elif c == "GREEN":
+            res = GREEN
+        elif c == "BLUE":
+            res = BLUE
+        elif c == "ORANGE":
+            res = ORANGE
+        elif c == "WHITE":
+            res = WHITE
+        elif c == "BLACK":
+            res = BLACK
+        else:
+            res = WHITE
+    return res
+
+
 # ---------------------------------------------------------------------------- #
 #                                   RigidBody                                  #
 # ---------------------------------------------------------------------------- #
@@ -282,6 +305,7 @@ class ParticleSystem:
             parnum = pos.shape[0]
             phase_id = cfg_i.get("id", cnt)
             cnt += 1
+            color = color_selector(cfg_i, BLUE)
             meta.phase_info[phase_id] = PhaseInfo(
                 uid=phase_id,
                 parnum=parnum,
@@ -290,7 +314,7 @@ class ParticleSystem:
                 cfg=cfg_i,
                 is_dynamic=True,
                 pos=pos,
-                color=cfg_i.get("color", BLUE),
+                color=color,
             )
             self.fluid_particle_num += parnum
 
@@ -305,6 +329,7 @@ class ParticleSystem:
             if not is_dynamic:
                 phase_id = cfg_i.get("id", cnt) + 1000  # static solid phase_id starts from 1000
                 cnt += 1
+                color = color_selector(cfg_i, WHITE)
                 meta.phase_info[phase_id] = PhaseInfo(
                     uid=phase_id,
                     parnum=pos.shape[0],
@@ -313,7 +338,7 @@ class ParticleSystem:
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
-                    color=cfg_i.get("color", WHITE),
+                    color=color,
                 )
                 self.static_solid_particle_num += parnum
 
@@ -327,6 +352,8 @@ class ParticleSystem:
             is_dynamic = cfg_i.get("isDynamic", False)
             if is_dynamic:
                 phase_id = cfg_i.get("id", cnt) + 2000  # dynamic solid phase_id starts from 2000
+                cnt += 1
+                color = color_selector(cfg_i, ORANGE)
                 meta.phase_info[phase_id] = PhaseInfo(
                     uid=phase_id,
                     parnum=pos.shape[0],
@@ -335,7 +362,7 @@ class ParticleSystem:
                     cfg=cfg_i,
                     is_dynamic=is_dynamic,
                     pos=pos,
-                    color=cfg_i.get("color", ORANGE),
+                    color=color,
                 )
                 self.dynamic_solid_particle_num += parnum
 
