@@ -113,6 +113,15 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
         container[i] = value
 
 
+@ti.kernel
+def range_copy(dst: ti.template(), src: ti.template(), start: int):
+    """
+    将src的内容复制到 dst 的start开始位置
+    """
+    for i in src:
+        dst[start + i] = src[i]
+
+
 def color_selector(cfg, default=WHITE):
     if "color" not in cfg:
         return default
@@ -240,9 +249,6 @@ class RigidBody:
             positions[i] = R @ positions[i]
 
 
-# ---------------------------------------------------------------------------- #
-#                                particle system                               #
-# ---------------------------------------------------------------------------- #
 @dataclass
 class PhaseInfo:
     uid: int = 0
@@ -427,7 +433,6 @@ class ParticleData:
         self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
 
         # Grid id for each particle
-        # self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
         self.grid_ids = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
@@ -437,6 +442,7 @@ class ParticleData:
 #                             initialize particles                             #
 # ---------------------------------------------------------------------------- #
 def initialize_particles(pd: ParticleData):
+    """Assign the data into particle data, init those fields"""
     # join the pos arr
     all_par = np.concatenate([phase.pos for phase in meta.phase_info.values()], axis=0)
 
@@ -466,32 +472,13 @@ def initialize_particles(pd: ParticleData):
             meta.rbs.append(rb)
 
 
+# ---------------------------------------------------------------------------- #
+#                              NeighborhoodSearch                              #
+# ---------------------------------------------------------------------------- #
 @ti.data_oriented
-class ParticleSystem:
+class NeighborhoodSearch:
     def __init__(self):
-        meta.parm = Parameter()
-        meta.rbs = []
-        (
-            self.particle_max_num,
-            self.fluid_particle_num,
-            self.solid_particle_num,
-            self.static_solid_particle_num,
-            self.dynamic_solid_particle_num,
-        ) = load_particles(meta.phase_info)
-        meta.pd = ParticleData(self.particle_max_num, meta.parm.grid_num)
-        initialize_particles(meta.pd)  # fill the taichi fields
-        self.grid_particles_num = meta.pd.grid_particles_num
-        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
-        self.x = meta.pd.x
-
-    # ---------------------------------------------------------------------------- #
-    #                         utility kernels and functions                        #
-    # ---------------------------------------------------------------------------- #
-    @ti.kernel
-    def init_solid_particles(self):
-        for i in range(self.fluid_particle_num, self.fluid_particle_num + self.solid_particle_num):
-            self.is_dynamic[i] = 0
-            self.material[i] = SOLID
+        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(meta.pd.grid_particles_num.shape[0])
 
     @ti.func
     def pos_to_index(self, pos):
@@ -508,14 +495,6 @@ class ParticleSystem:
     @ti.func
     def get_flatten_grid_index(self, pos):
         return self.flatten_grid_index(self.pos_to_index(pos))
-
-    @ti.func
-    def is_static_rigid_body(self, p):
-        return meta.pd.material[p] == SOLID and (not meta.pd.is_dynamic[p])
-
-    @ti.func
-    def is_dynamic_rigid_body(self, p):
-        return meta.pd.material[p] == SOLID and meta.pd.is_dynamic[p]
 
     @ti.kernel
     def update_grid_id(self):
@@ -579,9 +558,9 @@ class ParticleSystem:
                 meta.pd.dfsph_factor[I] = meta.pd.dfsph_factor_buffer[I]
                 meta.pd.density_adv[I] = meta.pd.density_adv_buffer[I]
 
-    def initialize_particle_system(self):
+    def run_search(self):
         self.update_grid_id()
-        self.prefix_sum_executor.run(self.grid_particles_num)
+        self.prefix_sum_executor.run(meta.pd.grid_particles_num)
         self.counting_sort()
 
     @ti.func
@@ -596,16 +575,37 @@ class ParticleSystem:
                     task(p_i, p_j, ret)
 
 
+# ---------------------------------------------------------------------------- #
+#                                particle system                               #
+# ---------------------------------------------------------------------------- #
+@ti.data_oriented
+class ParticleSystem:
+    def __init__(self):
+        meta.parm = Parameter()
+        meta.rbs = []
+        (
+            self.particle_max_num,
+            self.fluid_particle_num,
+            self.solid_particle_num,
+            self.static_solid_particle_num,
+            self.dynamic_solid_particle_num,
+        ) = load_particles(meta.phase_info)
+        meta.pd = ParticleData(self.particle_max_num, meta.parm.grid_num)
+        initialize_particles(meta.pd)  # fill the taichi fields
+
+        self.x = meta.pd.x
+        meta.ns = NeighborhoodSearch()
+
+    @ti.func
+    def is_static_rigid_body(self, p):
+        return meta.pd.material[p] == SOLID and (not meta.pd.is_dynamic[p])
+
+    @ti.func
+    def is_dynamic_rigid_body(self, p):
+        return meta.pd.material[p] == SOLID and meta.pd.is_dynamic[p]
+
+
 meta.ps = ParticleSystem()
-
-
-@ti.kernel
-def range_copy(dst: ti.template(), src: ti.template(), start: int):
-    """
-    将src的内容复制到 dst 的start开始位置
-    """
-    for i in src:
-        dst[start + i] = src[i]
 
 
 # just copy the rigid body position to the particle system
@@ -629,7 +629,7 @@ class SPHBase:
 
     def step(self):
         step_num = 0
-        meta.ps.initialize_particle_system()
+        meta.ns.run_search()
         self.compute_moving_boundary_volume()
         self.substep()
 
@@ -646,7 +646,7 @@ class SPHBase:
         pass
 
     def initialize(self):
-        meta.ps.initialize_particle_system()
+        meta.ns.run_search()
         self.compute_static_boundary_volume()
         self.compute_moving_boundary_volume()
 
@@ -718,7 +718,7 @@ class SPHBase:
             if not meta.ps.is_static_rigid_body(p_i):
                 continue
             delta = self.cubic_kernel(0.0)
-            meta.ps.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
+            meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
             meta.pd.m_V[p_i] = (
                 1.0 / delta * 3.0
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
@@ -734,7 +734,7 @@ class SPHBase:
             if not meta.ps.is_dynamic_rigid_body(p_i):
                 continue
             delta = self.cubic_kernel(0.0)
-            meta.ps.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
+            meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
             meta.pd.m_V[p_i] = (
                 1.0 / delta * 3.0
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
@@ -813,7 +813,7 @@ class DFSPHSolver(SPHBase):
                 continue
             meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
             den = 0.0
-            meta.ps.for_all_neighbors(p_i, self.compute_densities_task, den)
+            meta.ns.for_all_neighbors(p_i, self.compute_densities_task, den)
             meta.pd.density[p_i] += den
             meta.pd.density[p_i] *= self.density_0
 
@@ -883,7 +883,7 @@ class DFSPHSolver(SPHBase):
             d_v = ti.Vector(self.g)
             meta.pd.acceleration[p_i] = d_v
             if meta.pd.material[p_i] == FLUID:
-                meta.ps.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
+                meta.ns.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
                 meta.pd.acceleration[p_i] = d_v
 
     @ti.kernel
@@ -906,7 +906,7 @@ class DFSPHSolver(SPHBase):
             # `ret` concatenates `grad_p_i` and `sum_grad_p_k`
             ret = ti.Vector([0.0 for _ in range(meta.parm.dim + 1)])
 
-            meta.ps.for_all_neighbors(p_i, self.compute_DFSPH_factor_task, ret)
+            meta.ns.for_all_neighbors(p_i, self.compute_DFSPH_factor_task, ret)
 
             sum_grad_p_k = ret[3]
             for i in ti.static(range(3)):
@@ -942,7 +942,7 @@ class DFSPHSolver(SPHBase):
             if meta.pd.material[p_i] != FLUID:
                 continue
             ret = ti.Struct(density_adv=0.0, num_neighbors=0)
-            meta.ps.for_all_neighbors(p_i, self.compute_density_change_task, ret)
+            meta.ns.for_all_neighbors(p_i, self.compute_density_change_task, ret)
 
             # only correct positive divergence
             density_adv = ti.max(ret.density_adv, 0.0)
@@ -983,7 +983,7 @@ class DFSPHSolver(SPHBase):
             if meta.pd.material[p_i] != FLUID:
                 continue
             delta = 0.0
-            meta.ps.for_all_neighbors(p_i, self.compute_density_adv_task, delta)
+            meta.ns.for_all_neighbors(p_i, self.compute_density_adv_task, delta)
             density_adv = meta.pd.density[p_i] / self.density_0 + self.dt[None] * delta
             meta.pd.density_adv[p_i] = ti.max(density_adv, 1.0)
 
@@ -1063,7 +1063,7 @@ class DFSPHSolver(SPHBase):
             ret = ti.Struct(dv=ti.Vector([0.0 for _ in range(meta.parm.dim)]), k_i=k_i)
             # TODO: if warm start
             # get_kappa_V += k_i
-            meta.ps.for_all_neighbors(p_i, self.divergence_solver_iteration_task, ret)
+            meta.ns.for_all_neighbors(p_i, self.divergence_solver_iteration_task, ret)
             meta.pd.v[p_i] += ret.dv
 
     @ti.func
@@ -1139,7 +1139,7 @@ class DFSPHSolver(SPHBase):
 
             # TODO: if warmstart
             # get kappa V
-            meta.ps.for_all_neighbors(p_i, self.pressure_solve_iteration_task, k_i)
+            meta.ns.for_all_neighbors(p_i, self.pressure_solve_iteration_task, k_i)
 
     @ti.func
     def pressure_solve_iteration_task(self, p_i, p_j, k_i: ti.template()):
