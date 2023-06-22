@@ -426,6 +426,7 @@ class ParticleData:
         self.material = ti.field(dtype=int, shape=self.particle_max_num)
         self.color = ti.Vector.field(3, dtype=ti.f32, shape=self.particle_max_num)
         self.is_dynamic = ti.field(dtype=int, shape=self.particle_max_num)
+        self.particle_id = ti.field(dtype=int, shape=self.particle_max_num)
 
         if get_cfg("simulationMethod") == 4:
             self.dfsph_factor = ti.field(dtype=float, shape=self.particle_max_num)
@@ -444,6 +445,7 @@ class ParticleData:
         self.material_buffer = ti.field(dtype=int, shape=self.particle_max_num)
         self.color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=self.particle_max_num)
         self.is_dynamic_buffer = ti.field(dtype=int, shape=self.particle_max_num)
+        self.particle_id_buffer = ti.field(dtype=int, shape=self.particle_max_num)
 
         if get_cfg("simulationMethod") == 4:
             self.dfsph_factor_buffer = ti.field(dtype=float, shape=self.particle_max_num)
@@ -462,6 +464,12 @@ class ParticleData:
 # ---------------------------------------------------------------------------- #
 #                             initialize particles                             #
 # ---------------------------------------------------------------------------- #
+@ti.kernel
+def init_particle_id(particle_id: ti.template()):
+    for i in particle_id:
+        particle_id[i] = i
+
+
 def initialize_particles(pd: ParticleData):
     """Assign the data into particle data, init those fields"""
     # join the pos arr
@@ -491,6 +499,8 @@ def initialize_particles(pd: ParticleData):
             rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
             rb = RigidBody(rb_init_pos, phase.uid)
             meta.rbs.append(rb)
+
+    init_particle_id(meta.pd.particle_id)
 
 
 # ---------------------------------------------------------------------------- #
@@ -555,6 +565,7 @@ class NeighborhoodSearch:
             meta.pd.material_buffer[new_index] = meta.pd.material[I]
             meta.pd.color_buffer[new_index] = meta.pd.color[I]
             meta.pd.is_dynamic_buffer[new_index] = meta.pd.is_dynamic[I]
+            meta.pd.particle_id_buffer[new_index] = meta.pd.particle_id[I]
 
             if ti.static(meta.parm.simulation_method == 4):
                 meta.pd.dfsph_factor_buffer[new_index] = meta.pd.dfsph_factor[I]
@@ -574,6 +585,7 @@ class NeighborhoodSearch:
             meta.pd.material[I] = meta.pd.material_buffer[I]
             meta.pd.color[I] = meta.pd.color_buffer[I]
             meta.pd.is_dynamic[I] = meta.pd.is_dynamic_buffer[I]
+            meta.pd.particle_id[I] = meta.pd.particle_id_buffer[I]
 
             if ti.static(meta.parm.simulation_method == 4):
                 meta.pd.dfsph_factor[I] = meta.pd.dfsph_factor_buffer[I]
