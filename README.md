@@ -3,9 +3,9 @@
 ## 1. 文件结构
 
 SPH: 本论文的原本的代码。
--data/scenes: 场景文件
--data/models: 模型文件
--main.py: 所有代码均放在这一个文件中
+- data/scenes: 场景文件
+- data/models: 模型文件
+- main.py: 所有代码均放在这一个文件中
 
 MPM: 要对比的MPM代码。采用Su21(A Unified Second-Order Accurate in Time MPM Formulation for Simulating Viscoelastic Liquids with Phase Change, https://orionquest.github.io/papers/USOSVLPC/paper.html) 的算法。基于其MATLAB代码改写。
 
