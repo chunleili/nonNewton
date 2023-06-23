@@ -484,6 +484,7 @@ def initialize_particles(pd: ParticleData):
     pd.material.fill(FLUID)
     pd.color.fill(WHITE)
     pd.is_dynamic.fill(1)
+    init_particle_id(meta.pd.particle_id)
 
     for phase in meta.phase_info.values():
         # assign material, color, is_dynamic, phase_id
@@ -499,8 +500,6 @@ def initialize_particles(pd: ParticleData):
             rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
             rb = RigidBody(rb_init_pos, phase.uid)
             meta.rbs.append(rb)
-
-    init_particle_id(meta.pd.particle_id)
 
 
 # ---------------------------------------------------------------------------- #
@@ -608,12 +607,27 @@ class NeighborhoodSearch:
                     task(p_i, p_j, ret)
 
 
+# @ti.kernel
+# def copy_pos_to_system(src_pos:ti.template(), x:ti.template(), particle_id:ti.template(), startnum:int, endnum:int):
+#     for i in range(startnum, endnum):
+#             x[particle_id[i]] = src_pos[i-startnum]
+
+
+def copy_pos_to_system(src_pos: ti.template(), x: ti.template(), particle_id: ti.template(), startnum: int):
+    for i in range(src_pos.shape[0]):
+        src_id = i + startnum
+        dst_id = particle_id[src_id]
+        x[dst_id] = src_pos[i]
+
+
 # just copy the rigid body position to the particle system
 def oneway_coupling(rb):
-    rb_pos = rb.positions
-    phase_id = rb.phase_id
-    start = meta.phase_info[phase_id].startnum
-    range_copy(meta.pd.x, rb_pos, start)
+    rb_phase_id = rb.phase_id
+    startnum = meta.phase_info[rb_phase_id].startnum
+    parnum = meta.phase_info[rb_phase_id].parnum
+    endnum = startnum + parnum
+    copy_pos_to_system(rb.positions, meta.pd.x, meta.pd.particle_id, startnum)
+    # range_copy(meta.pd.x, rb.positions, 0)
 
 
 # ---------------------------------------------------------------------------- #
@@ -628,19 +642,17 @@ class SPHBase:
         self.dt = meta.parm.dt
 
     def step(self):
-        step_num = 0
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
         if meta.fluid_particle_num > 0:
             self.substep()
 
-        if step_num % meta.parm.coupling_interval == 0:  # solid should move slower than fluid
-            for rb in meta.rbs:
+        for rb in meta.rbs:
+            for i in range(meta.parm.coupling_interval):
                 rb.substep()
-                oneway_coupling(rb)
+            oneway_coupling(rb)
 
-        self.enforce_boundary_3D(FLUID)
-        step_num += 1
+        self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
 
     @abstractmethod
     def substep(self):
@@ -741,41 +753,41 @@ class SPHBase:
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
     @ti.func
-    def simulate_collisions(self, p_i, vec):
+    def simulate_collisions(self, p_i, vec, vel):
         # Collision factor, assume roughly (1-c_f)*velocity loss after collision
         c_f = 0.5
-        meta.pd.v[p_i] -= (1.0 + c_f) * meta.pd.v[p_i].dot(vec) * vec
+        vel[p_i] -= (1.0 + c_f) * vel[p_i].dot(vec) * vec
 
     @ti.kernel
-    def enforce_boundary_3D(self, particle_type: int):
-        for p_i in ti.grouped(meta.pd.x):
-            if meta.pd.material[p_i] == particle_type and meta.pd.is_dynamic[p_i]:
-                pos = meta.pd.x[p_i]
+    def enforce_boundary_3D(self, positions: ti.template(), vel: ti.template(), particle_type: int):
+        for p_i in ti.grouped(positions):
+            if meta.pd.is_dynamic[p_i] and meta.pd.material[p_i] == particle_type:
+                pos = positions[p_i]
                 collision_normal = ti.Vector([0.0, 0.0, 0.0])
                 if pos[0] > meta.parm.domain_size[0] - meta.parm.padding:
                     collision_normal[0] += 1.0
-                    meta.pd.x[p_i][0] = meta.parm.domain_size[0] - meta.parm.padding
+                    positions[p_i][0] = meta.parm.domain_size[0] - meta.parm.padding
                 if pos[0] <= meta.parm.padding:
                     collision_normal[0] += -1.0
-                    meta.pd.x[p_i][0] = meta.parm.padding
+                    positions[p_i][0] = meta.parm.padding
 
                 if pos[1] > meta.parm.domain_size[1] - meta.parm.padding:
                     collision_normal[1] += 1.0
-                    meta.pd.x[p_i][1] = meta.parm.domain_size[1] - meta.parm.padding
+                    positions[p_i][1] = meta.parm.domain_size[1] - meta.parm.padding
                 if pos[1] <= meta.parm.padding:
                     collision_normal[1] += -1.0
-                    meta.pd.x[p_i][1] = meta.parm.padding
+                    positions[p_i][1] = meta.parm.padding
 
                 if pos[2] > meta.parm.domain_size[2] - meta.parm.padding:
                     collision_normal[2] += 1.0
-                    meta.pd.x[p_i][2] = meta.parm.domain_size[2] - meta.parm.padding
+                    positions[p_i][2] = meta.parm.domain_size[2] - meta.parm.padding
                 if pos[2] <= meta.parm.padding:
                     collision_normal[2] += -1.0
-                    meta.pd.x[p_i][2] = meta.parm.padding
+                    positions[p_i][2] = meta.parm.padding
 
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
-                    self.simulate_collisions(p_i, collision_normal / collision_normal_length)
+                    self.simulate_collisions(p_i, collision_normal / collision_normal_length, vel)
 
 
 # ---------------------------------------------------------------------------- #
