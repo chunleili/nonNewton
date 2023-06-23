@@ -1,0 +1,40 @@
+{
+	"Configuration":
+	{
+        "domainStart": [0.0, 0.0, 0.0],
+        "domainEnd": [2.0, 2.0, 2.0],
+		"particleRadius": 0.01,
+		"density0": 1000,
+		"simulationMethod": 4,
+		"gravitation": [0.0, -9.81, 0.0],
+		"timeStepSize": 0.004,
+		"boundaryHandlingMethod": 0
+	},
+	"SolidParticles":[
+		{
+			"geometryFile": "./data/models/cube.ply",
+			"solidType": "RIGID",
+			"translation": [-0.2, -0.2, 0.0],
+			"color":"RED"
+		},
+		{
+			"geometryFile": "./data/models/cube.ply",
+			"solidType": "STATIC",
+			"translation": [0, 0.1, 0.0],
+			"color":"GREEN"
+
+		},
+		{
+			"geometryFile": "./data/models/cube.ply",
+			"solidType": "ELASTIC",
+			"translation": [0.4, 0.4, 0.0],
+			"color":"BLUE"
+		},
+		{
+			"geometryFile": "./data/models/cube.ply",
+			"solidType": "RIGID",
+			"translation": [0.8, 0.8, 0.0],
+			"color":"YELLOW"
+		}
+	]
+}

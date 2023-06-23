@@ -30,6 +30,11 @@ BLUE = (0, 0, 1)
 ORANGE = (1, 0.5, 0)
 WHITE = (1, 1, 1)
 BLACK = (0, 0, 0)
+YELLOW = (1, 1, 0)
+
+STATIC = 0
+RIGID = 1
+ELASTIC = 2
 
 
 # ---------------------------------------------------------------------------- #
@@ -160,8 +165,27 @@ def color_selector(cfg, default=WHITE):
             res = WHITE
         elif c == "BLACK":
             res = BLACK
+        elif c == "YELLOW":
+            res = YELLOW
         else:
             res = WHITE
+    return res
+
+
+def solid_type_selector(cfg, default=STATIC):
+    if "solidType" not in cfg:
+        return default
+    else:
+        res = tuple()
+        c = cfg.get("solidType")
+        if c == "STATIC":
+            res = STATIC
+        elif c == "RIGID":
+            res = RIGID
+        elif c == "ELASTIC":
+            res = ELASTIC
+        else:
+            res = STATIC
     return res
 
 
@@ -323,6 +347,7 @@ class PhaseInfo:
     cfg: dict = None
     color: tuple = WHITE
     pos: np.ndarray = None
+    solid_type: int = STATIC
 
 
 meta.phase_info = dict()
@@ -384,65 +409,55 @@ def load_particles(phase_info):
         )
         fluid_particle_num += parnum
 
-    # static solid particles
-    static_solid_particle_num = 0
     cfgs = get_solid_cfg()
-    cnt = 0
+    static_par_num = 0
+    cnt_static = 0
     for cfg_i in cfgs:
-        is_dynamic = cfg_i.get("isDynamic", False)
-        if not is_dynamic:
-            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-            pos = transform(pos, cfg_i)
-            parnum = pos.shape[0]
-            phase_id = cfg_i.get("id", cnt) + 1000  # static solid phase_id starts from 1000
-            cnt += 1
-            color = color_selector(cfg_i, WHITE)
-            phase_info[phase_id] = PhaseInfo(
-                uid=phase_id,
-                parnum=pos.shape[0],
-                startnum=fluid_particle_num + static_solid_particle_num,
-                material=SOLID,
-                cfg=cfg_i,
-                is_dynamic=is_dynamic,
-                pos=pos,
-                color=color,
-            )
-            static_solid_particle_num += parnum
+        solid_type = solid_type_selector(cfg_i)
+        if solid_type == STATIC:
+            static_par_num, cnt_static = parse_cfg(cfg_i, cnt_static, static_par_num, 1000, SOLID, STATIC, WHITE, 0)
 
-    # dynamic solid particles
-    dynamic_solid_particle_num = 0
-    cfgs = get_solid_cfg()
-    cnt = 0
+    rigid_par_num = 0
+    cnt_rigid = 0
     for cfg_i in cfgs:
-        is_dynamic = cfg_i.get("isDynamic", False)
-        if is_dynamic:
-            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-            pos = transform(pos, cfg_i)
-            parnum = pos.shape[0]
-            phase_id = cfg_i.get("id", cnt) + 2000  # dynamic solid phase_id starts from 2000
-            cnt += 1
-            color = color_selector(cfg_i, ORANGE)
-            phase_info[phase_id] = PhaseInfo(
-                uid=phase_id,
-                parnum=pos.shape[0],
-                startnum=fluid_particle_num + static_solid_particle_num + dynamic_solid_particle_num,
-                material=SOLID,
-                cfg=cfg_i,
-                is_dynamic=is_dynamic,
-                pos=pos,
-                color=color,
-            )
-            dynamic_solid_particle_num += parnum
+        solid_type = solid_type_selector(cfg_i)
+        if solid_type == RIGID:
+            rigid_par_num, cnt_rigid = parse_cfg(cfg_i, cnt_rigid, rigid_par_num, 2000, SOLID, RIGID, ORANGE, 1)
 
-    solid_particle_num = static_solid_particle_num + dynamic_solid_particle_num
+    elastic_par_num = 0
+    cnt_elastic = 0
+    for cfg_i in cfgs:
+        solid_type = solid_type_selector(cfg_i)
+        if solid_type == ELASTIC:
+            elastic_par_num, cnt_elastic = parse_cfg(
+                cfg_i, cnt_elastic, elastic_par_num, 3000, SOLID, ELASTIC, YELLOW, 1
+            )
+
+    solid_particle_num = static_par_num + rigid_par_num + elastic_par_num
     particle_max_num = fluid_particle_num + solid_particle_num
-    return (
-        particle_max_num,
-        fluid_particle_num,
-        solid_particle_num,
-        static_solid_particle_num,
-        dynamic_solid_particle_num,
+    return particle_max_num, fluid_particle_num
+
+
+def parse_cfg(cfg_i, cnt, startnum, phase_id_start, default_material, default_solid_type, default_color, is_dynamic):
+    pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+    pos = transform(pos, cfg_i)
+    parnum = pos.shape[0]
+    phase_id = cfg_i.get("id", cnt) + phase_id_start  # rigid solid phase_id starts from 2000
+    cnt += 1
+    color = color_selector(cfg_i, default_color)
+    meta.phase_info[phase_id] = PhaseInfo(
+        uid=phase_id,
+        parnum=pos.shape[0],
+        startnum=startnum,
+        material=default_material,
+        cfg=cfg_i,
+        is_dynamic=is_dynamic,
+        pos=pos,
+        color=color,
+        solid_type=default_solid_type,
     )
+    endnum = startnum + parnum
+    return endnum, cnt
 
 
 # ---------------------------------------------------------------------------- #
@@ -541,7 +556,7 @@ def initialize_particles(pd: ParticleData):
         range_assign(start, end, phase.uid, pd.phase_id)
 
         # init rigid bodies
-        if phase.material == SOLID and phase.is_dynamic:
+        if phase.solid_type == RIGID:
             rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
             rb = RigidBody(rb_init_pos, phase.uid)
             meta.rbs.append(rb)
@@ -1274,13 +1289,7 @@ def make_doaminbox():
 def initialize():
     meta.parm = Parameter()
     meta.rbs = []
-    (
-        meta.particle_max_num,
-        meta.fluid_particle_num,
-        meta.solid_particle_num,
-        meta.static_solid_particle_num,
-        meta.dynamic_solid_particle_num,
-    ) = load_particles(meta.phase_info)
+    meta.particle_max_num, meta.fluid_particle_num = load_particles(meta.phase_info)
     meta.pd = ParticleData(meta.particle_max_num, meta.parm.grid_num)
     initialize_particles(meta.pd)  # fill the taichi fields
 

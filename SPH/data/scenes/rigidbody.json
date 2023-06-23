@@ -12,8 +12,7 @@
 	},
 	"SolidParticles":[
 		{
-			"geometryFile": "./data/models/cube.ply",
-			"isDynamic": true
+			"geometryFile": "./data/models/cube.ply"
 		}
 	]
 }
