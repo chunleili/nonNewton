@@ -701,6 +701,7 @@ class SPHBase:
                 rb.substep()
                 oneway_coupling(rb)
 
+        animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
 
     @abstractmethod
@@ -1250,7 +1251,6 @@ class DFSPHSolver(SPHBase):
         self.predict_velocity()
         self.pressure_solve()
         self.advect()
-        animate_particles(meta.pd.x)
 
 
 def make_doaminbox():
