@@ -311,6 +311,7 @@ class Parameter:
         self.density0 = get_cfg("density0", 1000.0)  # reference density
         self.gravity = ti.Vector(get_cfg("gravitation", [0.0, -9.8, 0.0]))
         self.viscosity = 0.01  # viscosity
+        self.boundary_viscosity = get_cfg("boundaryViscosity", 0.0)
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
         # Grid related properties
@@ -883,20 +884,20 @@ class DFSPHSolver(SPHBase):
             )
             ret += f_v
         elif meta.pd.material[p_j] == SOLID:
-            boundary_viscosity = 0.0
-            # Boundary neighbors
-            ## Akinci2012
-            f_v = (
-                d
-                * boundary_viscosity
-                * (self.density_0 * meta.pd.m_V[p_j] / (meta.pd.density[p_i]))
-                * v_xy
-                / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
-                * self.cubic_kernel_derivative(r)
-            )
-            ret += f_v
-            if is_dynamic_rigid_body(p_j):
-                meta.pd.acceleration[p_j] += -f_v * meta.pd.density[p_i] / meta.pd.density[p_j]
+            if meta.parm.boundary_viscosity != 0.0:
+                # Boundary neighbors
+                ## Akinci2012
+                f_v = (
+                    d
+                    * meta.parm.boundary_viscosity
+                    * (self.density_0 * meta.pd.m_V[p_j] / (meta.pd.density[p_i]))
+                    * v_xy
+                    / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
+                    * self.cubic_kernel_derivative(r)
+                )
+                ret += f_v
+                if is_dynamic_rigid_body(p_j):
+                    meta.pd.acceleration[p_j] += -f_v
 
     @ti.kernel
     def compute_non_pressure_forces(self):
@@ -1193,7 +1194,10 @@ class DFSPHSolver(SPHBase):
                 meta.pd.v[p_i] += vel_change
                 if is_dynamic_rigid_body(p_j):
                     meta.pd.acceleration[p_j] += (
-                        -vel_change * 1.0 / self.dt[None] * meta.pd.density[p_i] / meta.pd.density[p_j]
+                        # -vel_change * 1.0 / self.dt[None] * meta.pd.density[p_i] / meta.pd.density[p_j]
+                        -vel_change
+                        * 1.0
+                        / self.dt[None]
                     )
 
     @ti.kernel
