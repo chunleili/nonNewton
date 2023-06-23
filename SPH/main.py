@@ -839,6 +839,10 @@ class SPHBase:
                 if collision_normal_length > 1e-6:
                     self.simulate_collisions(p_i, collision_normal / collision_normal_length, vel)
 
+    @ti.func
+    def grad_w_ij(self, p_i: int, p_j: int):
+        return self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+
 
 # ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
@@ -987,14 +991,14 @@ class DFSPHSolver(SPHBase):
     def compute_DFSPH_factor_task(self, p_i, p_j, ret: ti.template()):
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+            grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
             ret[3] += grad_p_j.norm_sqr()  # sum_grad_p_k
             for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+            grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
             for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
 
@@ -1026,15 +1030,11 @@ class DFSPHSolver(SPHBase):
         v_j = meta.pd.v[p_j]
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(
-                self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
-            )
+            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(
-                self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
-            )
+            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
 
         # Compute the number of neighbors
         ret.num_neighbors += 1
@@ -1055,11 +1055,11 @@ class DFSPHSolver(SPHBase):
         v_j = meta.pd.v[p_j]
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j]))
+            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j]))
+            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
 
     @ti.kernel
     def compute_density_error(self, offset: float) -> float:
@@ -1138,13 +1138,13 @@ class DFSPHSolver(SPHBase):
                 ret.k_i + self.density_0 / self.density_0 * k_j
             )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
                 ret.dv -= self.dt[None] * k_sum * grad_p_j
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(ret.k_i) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
                 vel_change = -self.dt[None] * 1.0 * ret.k_i * grad_p_j
                 ret.dv += vel_change
                 if is_dynamic_rigid_body(p_j):
@@ -1215,14 +1215,14 @@ class DFSPHSolver(SPHBase):
                 k_i + self.density_0 / self.density_0 * k_j
             )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
                 # Directly update velocities instead of storing pressure accelerations
                 meta.pd.v[p_i] -= self.dt[None] * k_sum * grad_p_j  # ki, kj already contain inverse density
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(k_i) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
 
                 # Directly update velocities instead of storing pressure accelerations
                 vel_change = -self.dt[None] * 1.0 * k_i * grad_p_j  # kj already contains inverse density
