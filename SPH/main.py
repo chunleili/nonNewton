@@ -849,11 +849,11 @@ class DFSPHSolver(SPHBase):
 
         self.surface_tension = 0.01
         self.enable_divergence_solver = True
-        self.m_max_iterations_v = 100  # max iteration allowed of divergence solver
-        self.m_max_iterations = 100
+        self.m_max_iterations_v = get_cfg("maxIterationsV", 100)  # max iter for divergence solve
+        self.m_max_iterations = get_cfg("maxIterations", 100)  # max iter for pressure solve
         self.m_eps = 1e-5
-        self.max_error_V = 0.1  # max error of divergence solver iteration in percentage
-        self.max_error = 0.05
+        self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
+        self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
 
     @ti.func
     def compute_densities_task(self, p_i, p_j, ret: ti.template()):
