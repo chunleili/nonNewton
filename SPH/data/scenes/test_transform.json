@@ -16,13 +16,17 @@
 		"exportPly": false,
 		"exportObj": false
 	},
+	"FluidParticles": [
+		{
+			"geometryFile": "./data/models/cube2.ply",
+			"translation": [0, 0, 0]
+		}
+	],
 	"SolidParticles":[
 		{
 			"geometryFile": "./data/models/cube.ply",
-			"isDynamic": true,
-			"translation": [2.0, 2.0, 2.0],
-			"rotationAxis": [0.0, 0.0, 1.0],
-			"rotationAngle": 0.0
+			"rotationAxis": [1, 0, 0],
+			"rotationAngle": 45
 		}
 	]
 }

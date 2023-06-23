@@ -96,8 +96,15 @@ def read_ply_particles(geometryFile):
 
 def transform(points: np.ndarray, cfg: dict):
     mesh = trimesh.Trimesh(vertices=points)
-    trans = cfg.get("translation", [0, 0.1, 0])
-    mesh.apply_translation(trans)
+    rotation_angle = cfg.get("rotationAngle", None)
+    rotation_axis = cfg.get("rotationAxis", None)
+    if rotation_angle is not None and rotation_axis is not None:
+        mesh.apply_transform(
+            trimesh.transformations.rotation_matrix(np.deg2rad(rotation_angle), rotation_axis, point=mesh.center_mass)
+        )
+    trans = cfg.get("translation", None)
+    if trans is not None:
+        mesh.apply_translation(trans)
     return mesh.vertices
 
 
@@ -325,6 +332,7 @@ def load_particles(phase_info):
     cnt = 0
     for cfg_i in cfgs:
         pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+        pos = transform(pos, cfg_i)
         parnum = pos.shape[0]
         phase_id = cfg_i.get("id", cnt)
         cnt += 1
@@ -346,10 +354,11 @@ def load_particles(phase_info):
     cfgs = get_solid_cfg()
     cnt = 0
     for cfg_i in cfgs:
-        pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-        parnum = pos.shape[0]
         is_dynamic = cfg_i.get("isDynamic", False)
         if not is_dynamic:
+            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            pos = transform(pos, cfg_i)
+            parnum = pos.shape[0]
             phase_id = cfg_i.get("id", cnt) + 1000  # static solid phase_id starts from 1000
             cnt += 1
             color = color_selector(cfg_i, WHITE)
@@ -370,10 +379,11 @@ def load_particles(phase_info):
     cfgs = get_solid_cfg()
     cnt = 0
     for cfg_i in cfgs:
-        pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-        parnum = pos.shape[0]
         is_dynamic = cfg_i.get("isDynamic", False)
         if is_dynamic:
+            pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+            pos = transform(pos, cfg_i)
+            parnum = pos.shape[0]
             phase_id = cfg_i.get("id", cnt) + 2000  # dynamic solid phase_id starts from 2000
             cnt += 1
             color = color_selector(cfg_i, ORANGE)
