@@ -318,7 +318,7 @@ class Parameter:
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.padding = self.grid_size
 
-        self.coupling_interval = get_cfg("couplingIntervals", 10)
+        self.coupling_interval = get_cfg("couplingIntervals", 1)
 
 
 # ---------------------------------------------------------------------------- #
@@ -617,12 +617,16 @@ class NeighborhoodSearch:
                     task(p_i, p_j, ret)
 
 
+# ---------------------------------------------------------------------------- #
+#                             fluid solid coupling                             #
+# ---------------------------------------------------------------------------- #
 # @ti.kernel
 # def copy_pos_to_system(src_pos:ti.template(), x:ti.template(), particle_id:ti.template(), startnum:int, endnum:int):
 #     for i in range(startnum, endnum):
 #             x[particle_id[i]] = src_pos[i-startnum]
 
 
+@ti.kernel
 def copy_pos_to_system(src_pos: ti.template(), x: ti.template(), particle_id: ti.template(), startnum: int):
     for i in range(src_pos.shape[0]):
         src_id = i + startnum
@@ -657,10 +661,10 @@ class SPHBase:
         if meta.fluid_particle_num > 0:
             self.substep()
 
-        for rb in meta.rbs:
-            for i in range(meta.parm.coupling_interval):
+        if meta.step_num % meta.parm.coupling_interval == 0:
+            for rb in meta.rbs:
                 rb.substep()
-            oneway_coupling(rb)
+                oneway_coupling(rb)
 
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
 
@@ -809,10 +813,10 @@ class DFSPHSolver(SPHBase):
 
         self.surface_tension = 0.01
         self.enable_divergence_solver = True
-        self.m_max_iterations_v = 100
+        self.m_max_iterations_v = 100  # max iteration allowed of divergence solver
         self.m_max_iterations = 100
         self.m_eps = 1e-5
-        self.max_error_V = 0.1
+        self.max_error_V = 0.1  # max error of divergence solver iteration in percentage
         self.max_error = 0.05
 
     @ti.func
@@ -1109,7 +1113,9 @@ class DFSPHSolver(SPHBase):
                 ret.dv += vel_change
                 if is_dynamic_rigid_body(p_j):
                     meta.pd.acceleration[p_j] += (
-                        -vel_change * (1 / self.dt[None]) * meta.pd.density[p_i] / meta.pd.density[p_j]
+                        # -vel_change * (1 / self.dt[None]) * meta.pd.density[p_i] / meta.pd.density[p_j]
+                        -vel_change
+                        * (1 / self.dt[None])
                     )
 
     def pressure_solve(self):
