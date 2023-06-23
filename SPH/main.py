@@ -94,6 +94,12 @@ def read_ply_particles(geometryFile):
     return pts
 
 
+def read_ply_particles_with_user_data(geometryFile):
+    plydata = plyfile.PlyData.read(geometryFile)
+    res = plydata["vertex"].data
+    return res
+
+
 def transform(points: np.ndarray, cfg: dict):
     mesh = trimesh.Trimesh(vertices=points)
     rotation_angle = cfg.get("rotationAngle", None)
@@ -167,6 +173,34 @@ def is_static_rigid_body(p):
 @ti.func
 def is_dynamic_rigid_body(p):
     return meta.pd.material[p] == SOLID and meta.pd.is_dynamic[p]
+
+
+def animate_particles(pos):
+    """
+    Use a ply file to animate particles. The format should be:
+    frame, dx, dy, dz
+    """
+    if not hasattr(meta, "anime_file"):
+        meta.anime_file = get_cfg("animeFile", None)
+
+    if meta.anime_file is not None:
+        pts = read_ply_particles_with_user_data(sph_root_path + meta.anime_file)
+        frames = pts["frame"]
+        dx, dy, dz = pts["dx"], pts["dy"], pts["dz"]
+
+        for i, f in enumerate(frames):
+            if f == int(meta.frame / 1):
+                dx_, dy_, dz_ = dx[i], dy[i], dz[i]
+                dx_ti = ti.Vector([dx_, dy_, dz_])
+                animate_particles_kernel(pos, dx_ti)
+
+
+@ti.kernel
+def animate_particles_kernel(pos: ti.template(), dx_: ti.template()):
+    for i in pos:
+        pos[i][0] += dx_[0]
+        pos[i][1] += dx_[1]
+        pos[i][2] += dx_[2]
 
 
 # ---------------------------------------------------------------------------- #
@@ -1216,6 +1250,7 @@ class DFSPHSolver(SPHBase):
         self.predict_velocity()
         self.pressure_solve()
         self.advect()
+        animate_particles(meta.pd.x)
 
 
 def make_doaminbox():
@@ -1290,6 +1325,7 @@ def main():
     cnt = 0
     meta.paused = True
     meta.step_num = 0
+    meta.frame = 0
     while window.running:
         for e in window.get_events(ti.ui.PRESS):
             if e.key == ti.ui.SPACE:
@@ -1302,6 +1338,7 @@ def main():
         if not meta.paused:
             solver.step()
             meta.step_num += 1
+            meta.frame += 1
 
         # print(camera.curr_position)
         # print(camera.curr_lookat)
