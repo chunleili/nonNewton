@@ -12,11 +12,7 @@
 	},
 	"FluidParticles": [
 		{
-			"geometryFile": "./data/models/cube.ply",
-			"color":"GREEN"
-		},
-		{
-			"geometryFile": "./data/models/cube2.ply"
+			"geometryFile": "./data/models/cube.ply"
 		}
 	]
 }
