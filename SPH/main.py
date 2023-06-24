@@ -262,15 +262,11 @@ class RigidBody:
             self.dt,
             self.q_inv,
             self.radius_vector,
-            # self.gravity,
         )
 
-    def rotate(self, angle: float):
-        self.rotation(angle, self.positions)
-
-    @staticmethod
     @ti.kernel
     def shape_matching(
+        self,
         num_particles: int,
         positions0: ti.template(),
         positions: ti.template(),
@@ -279,10 +275,9 @@ class RigidBody:
         dt: ti.f32,
         q_inv: ti.template(),
         radius_vector: ti.template(),
-        # gravity: ti.template(),
     ):
         #  update vel and pos firtly
-        gravity = ti.Vector([0.0, -9.8, 0.0])
+        gravity = self.gravity
         for i in range(num_particles):
             positions0[i] = positions[i]
             f = gravity
@@ -299,7 +294,7 @@ class RigidBody:
         c /= num_particles
 
         # compute transformation matrix and extract rotation
-        A = sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
+        sum1 = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f32)
         for i in range(num_particles):
             sum1 += (positions[i] - c).outer_product(radius_vector[i])
         A = sum1 @ q_inv[None]
@@ -311,9 +306,8 @@ class RigidBody:
             positions[i] = c + R @ radius_vector[i]
             velocities[i] = (positions[i] - positions0[i]) / dt
 
-    @staticmethod
     @ti.kernel
-    def compute_radius_vector(num_particles: int, positions: ti.template(), radius_vector: ti.template()):
+    def compute_radius_vector(self, num_particles: int, positions: ti.template(), radius_vector: ti.template()):
         # compute the mass center and radius vector
         center_mass = ti.Vector([0.0, 0.0, 0.0])
         for i in range(num_particles):
@@ -322,21 +316,12 @@ class RigidBody:
         for i in range(num_particles):
             radius_vector[i] = positions[i] - center_mass
 
-    @staticmethod
     @ti.kernel
-    def precompute_q_inv(num_particles: int, radius_vector: ti.template(), q_inv: ti.template()):
+    def precompute_q_inv(self, num_particles: int, radius_vector: ti.template(), q_inv: ti.template()):
         res = ti.Matrix([[0.0] * 3 for _ in range(3)], ti.f64)
         for i in range(num_particles):
             res += radius_vector[i].outer_product(radius_vector[i])
         q_inv[None] = res.inverse()
-
-    @staticmethod
-    @ti.kernel
-    def rotation(angle: ti.f32, positions: ti.template()):
-        theta = angle / 180.0 * np.pi
-        R = ti.Matrix([[ti.cos(theta), -ti.sin(theta), 0.0], [ti.sin(theta), ti.cos(theta), 0.0], [0.0, 0.0, 1.0]])
-        for i in positions:
-            positions[i] = R @ positions[i]
 
 
 @dataclass
