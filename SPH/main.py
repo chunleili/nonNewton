@@ -924,6 +924,201 @@ class RigidBodySolver(SPHBase):
 
 
 # ---------------------------------------------------------------------------- #
+#                                   elasticiy                                  #
+# ---------------------------------------------------------------------------- #
+vec6 = ti.types.vector(6, ti.f32)
+mat6 = ti.types.matrix(6, 6, ti.f32)
+vec3 = ti.types.vector(3, ti.f32)
+
+
+class Elasticity(SPHBase):
+    """Elasticiy(Becker2009)"""
+
+    def __init__(self, numParticles) -> None:
+        self.m_youngsModulus = 1e5
+        self.m_poissonRatio = 0.3
+
+        self.numParticles = numParticles
+        self.max_num_neighbors = 50
+        #  initial particle indices, used to access their original positions
+        self.m_current_to_initial_index = ti.field(shape=(self.numParticles,), dtype=ti.i32)
+        self.m_initial_to_current_index = ti.field(shape=(self.numParticles,), dtype=ti.i32)
+        #  initial particle neighborhood
+        self.m_initialNeighbors = ti.field(shape=(self.numParticles, self.max_num_neighbors), dtype=ti.i32)
+        self.m_numInitialNeighbors = ti.field(shape=(self.numParticles,), dtype=ti.i32)
+        # // volumes in rest configuration
+        self.m_restVolumes = ti.field(dtype=ti.f32, shape=self.numParticles)
+        self.m_rotations = ti.Matrix.field(3, 3, dtype=ti.f32, shape=self.numParticles)
+        self.m_stress = ti.Vector.field(6, dtype=ti.f32, shape=self.numParticles)
+        self.m_F = ti.Matrix.field(3, 3, dtype=ti.f32, shape=self.numParticles)
+        self.m_alpha = ti.field(dtype=ti.f32, shape=())
+        self.m_alpha[None] = 0.0
+
+        self.initValues()
+
+    def initValues(self):
+        self.initValues_kernel()
+
+    def initValues_kernel(self):
+        # // Store the neighbors in the reference configurations and
+        # // compute the volume of each particle in rest state
+        for i in range(self.numParticles):
+            self.m_current_to_initial_index[i] = i
+            self.m_initial_to_current_index[i] = i
+
+            # only neighbors in same phase will influence elasticity
+            numNeighbors = get_num_neighbors(i)
+            self.m_numInitialNeighbors = numNeighbors
+            for j in range(numNeighbors):
+                self.m_initialNeighbors[i, j] = get_neighbor(i, j)
+
+            # // Compute volume
+            density = compute_density(i, density)
+            self.m_restVolumes[i] = meta.pd.m[i] / density
+
+            # // mark all particles in the bounding box as fixed
+            # determineFixedParticles()
+
+    def step(self):
+        self.computeRotations()
+        self.computeStress()
+        self.computeForces()
+
+    def computeRotations(self):
+        self.computeRotations_kernel()
+
+    @ti.kernel
+    def computeRotations_kernel(self):
+        for i in range(self.numParticles):
+            i0 = self.m_current_to_initial_index[i]
+            xi = meta.pd.x[i]
+            xi0 = meta.pd.x_0[i0]
+            Apq = ti.math.mat3(0.0)
+
+            numNeighbors = self.m_numInitialNeighbors[i0]
+
+            # ---------------------------------------------------------------------------- #
+            #                                     Fluid                                    #
+            # ---------------------------------------------------------------------------- #
+            for j in range(numNeighbors):
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
+                neighborIndex0 = self.m_initialNeighbors[i0][j]
+
+                xj = meta.pd.x[neighborIndex]
+                xj0 = meta.pd.x_0[neighborIndex0]
+                xj_xi = xj - xi
+                xj_xi_0 = xj0 - xi0
+                Apq += meta.pd.m[0] * self.cubic_kernel(xj_xi_0) * (xj_xi * xj_xi_0.transpose())
+
+            # extract rotations
+            R, _ = ti.polar_decompose(Apq)
+            self.m_rotations[i] = R
+
+    def computeStress(self):
+        mat6 = ti.types.matrix(6, 6, ti.f32)
+        C = mat6(0.0)
+        factor = self.m_youngsModulus / ((1.0 + self.m_poissonRatio) * (1.0 - 2.0 * self.m_poissonRatio))
+        C[0, 0] = C[1, 1] = C[2, 2] = factor * (1.0 - self.m_poissonRatio)
+        C[0, 1] = C[0, 2] = C[1, 0] = C[1, 2] = C[2, 0] = C[2, 1] = factor * (self.m_poissonRatio)
+        C[3, 3] = C[4, 4] = C[5, 5] = factor * 0.5 * (1.0 - 2.0 * self.m_poissonRatio)
+
+        self.computeStress_kernel(C)
+
+    @ti.kernel
+    def computeStress_kernel(self, C: ti.template()):
+        for i in range(self.numParticles):
+            i0 = self.m_current_to_initial_index[i]
+            xi = meta.pd.x[i]
+            xi0 = meta.pd.x_0[i0]
+
+            nablaU = ti.math.mat3(0.0)
+            numNeighbors = self.m_numInitialNeighbors[i0]
+
+            # ---------------------------------------------------------------------------- #
+            #                                     Fluid                                    #
+            # ---------------------------------------------------------------------------- #
+            for j in range(numNeighbors):
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
+                # get initial neighbor index considering the current particle order
+                neighborIndex0 = self.m_initialNeighbors[i0][j]
+                xj = meta.pd.x[neighborIndex]
+                xj0 = meta.pd.x_0[neighborIndex0]
+
+                xj_xi = xj - xi
+                xj_xi_0 = xj0 - xi0
+
+                uji = self.m_rotations[i].transpose() @ xj_xi - xj_xi_0
+                # subtract because kernel gradient is taken in direction of xji0 instead of xij0
+                nablaU -= (self.m_restVolumes[neighborIndex] * uji) * self.cubic_kernel_derivative(xj_xi_0).transpose()
+            self.m_F[i] = nablaU + ti.math.eye(3)
+
+            # compute Cauchy strain: epsilon = 0.5 (nabla u + nabla u^T)
+            vec6 = ti.types.vector(6, ti.f32)
+            strain = vec6(0.0)
+            strain[0] = nablaU[0, 0]  # \epsilon_{00}
+            strain[1] = nablaU[1, 1]  # \epsilon_{11}
+            strain[2] = nablaU[2, 2]  # \epsilon_{22}
+            strain[3] = 0.5 * (nablaU[0, 1] + nablaU[1, 0])  # \epsilon_{01}
+            strain[4] = 0.5 * (nablaU[0, 2] + nablaU[2, 0])  # \epsilon_{02}
+            strain[5] = 0.5 * (nablaU[1, 2] + nablaU[2, 1])  # \epsilon_{12}
+
+            # stress = C * epsilon
+            self.m_stress[i] = C @ strain
+
+    def computeForces(self):
+        self.computeForces_kernel()
+
+    @ti.func
+    def symMatTimesVec(self, M: vec6, v: vec3, res: ti.template()):
+        res[0] = M[0] * v[0] + M[3] * v[1] + M[4] * v[2]
+        res[1] = M[3] * v[0] + M[1] * v[1] + M[5] * v[2]
+        res[2] = M[4] * v[0] + M[5] * v[1] + M[2] * v[2]
+
+    @ti.kernel
+    def computeForces_kernel(self):
+        for i in range(self.numParticles):
+            i0 = self.m_current_to_initial_index[i]
+            xi0 = meta.pd.x_0[i0]
+
+            numNeighbors = self.m_numInitialNeighbors[i0]
+            fi = ti.math.vec3(0.0)
+
+            # ---------------------------------------------------------------------------- #
+            #                                     Fluid                                    #
+            # ---------------------------------------------------------------------------- #
+            for j in range(numNeighbors):
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
+                # get initial neighbor index considering the current particle order
+                neighborIndex0 = self.m_initialNeighbors[i0][j]
+
+                xj0 = meta.pd.x_0[neighborIndex0]
+
+                xj_xi_0 = xj0 - xi0
+                gradW0 = self.cubic_kernel_derivative(xj_xi_0)
+
+                dji = self.m_restVolumes[i] * gradW0
+                dij = -self.m_restVolumes[neighborIndex] * gradW0
+
+                sdji = ti.math.vec3(0.0)
+                sdij = ti.math.vec3(0.0)
+
+                self.symMatTimesVec(self.m_stress[neighborIndex], dji, sdji)
+                self.symMatTimesVec(self.m_stress[i], dij, sdij)
+
+                fij = -self.m_restVolumes[neighborIndex] * sdji
+                fji = -self.m_restVolumes[i] * sdij
+
+                fi += self.m_rotations[neighborIndex] @ fij - self.m_rotations[i] @ fji
+
+            fi = 0.5 * fi
+
+            # if (m_alpha != 0.0)
+            # Ganzenmüller 2015: NOT IMPLEMENTED YET
+
+            meta.pd.acceleration[i] += fi / meta.pd.m[i]
+
+
+# ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
 # ---------------------------------------------------------------------------- #
 class DFSPHSolver(SPHBase):
