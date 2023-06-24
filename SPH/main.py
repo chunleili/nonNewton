@@ -807,10 +807,10 @@ class SPHBase:
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
     @ti.func
-    def simulate_collisions(self, p_i, vec, vel):
+    def simulate_collisions(self, p_i, normal, vel):
         # Collision factor, assume roughly (1-c_f)*velocity loss after collision
         c_f = 0.5
-        vel[p_i] -= (1.0 + c_f) * vel[p_i].dot(vec) * vec
+        vel[p_i] -= (1.0 + c_f) * vel[p_i].dot(normal) * normal
 
     @ti.kernel
     def enforce_boundary_3D(self, positions: ti.template(), vel: ti.template(), particle_type: int):
@@ -823,29 +823,28 @@ class SPHBase:
 
         for p_i in ti.grouped(positions):
             if meta.pd.is_dynamic[p_i] and meta.pd.material[p_i] == particle_type:
-                noize = ti.random() * 0.01
                 pos = positions[p_i]
                 collision_normal = ti.Vector([0.0, 0.0, 0.0])
                 if pos[0] > xmax:
                     collision_normal[0] += 1.0
-                    positions[p_i][0] = xmax + noize
+                    positions[p_i][0] = xmax
                 if pos[0] <= xmin:
                     collision_normal[0] += -1.0
-                    positions[p_i][0] = xmin + noize
+                    positions[p_i][0] = xmin
 
                 if pos[1] > ymax:
                     collision_normal[1] += 1.0
-                    positions[p_i][1] = ymax + noize
+                    positions[p_i][1] = ymax
                 if pos[1] <= ymin:
                     collision_normal[1] += -1.0
-                    positions[p_i][1] = ymin + noize
+                    positions[p_i][1] = ymin
 
                 if pos[2] > zmax:
                     collision_normal[2] += 1.0
-                    positions[p_i][2] = zmax + noize
+                    positions[p_i][2] = zmax
                 if pos[2] <= zmin:
                     collision_normal[2] += -1.0
-                    positions[p_i][2] = zmin + noize
+                    positions[p_i][2] = zmin
 
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
