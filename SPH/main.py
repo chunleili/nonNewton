@@ -378,7 +378,7 @@ class Parameter:
 #                                load particles                                #
 # ---------------------------------------------------------------------------- #
 # load all particles info into phase_info, alway first fluid, second static solid, third dynamic solid.
-def load_particles(phase_info):
+def load_particles():
     cfgs = get_fluid_cfg()
     fluid_particle_num = 0
     cnt_fluid = 0
@@ -1262,7 +1262,7 @@ def make_doaminbox():
 
 def initialize():
     meta.parm = Parameter()
-    meta.particle_max_num, meta.fluid_particle_num = load_particles(meta.phase_info)
+    meta.particle_max_num, meta.fluid_particle_num = load_particles()
     meta.pd = ParticleData(meta.particle_max_num, meta.parm.grid_num)
     initialize_particles(meta.pd)  # fill the taichi fields
 
