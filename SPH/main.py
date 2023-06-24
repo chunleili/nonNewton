@@ -246,7 +246,7 @@ class RigidBody:
         self.dt = meta.parm.dt[None]
         self.gravity = meta.parm.gravity
         self.mass_inv = 1.0
-        self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
+        self.positions = extern_pos
         self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
@@ -585,6 +585,8 @@ class NeighborhoodSearch:
             )
 
         for I in ti.grouped(meta.pd.grid_ids):
+            if meta.pd.material[I] != FLUID:
+                continue
             new_index = meta.pd.grid_ids_new[I]
             meta.pd.grid_ids_buffer[new_index] = meta.pd.grid_ids[I]
             meta.pd.phase_id_buffer[new_index] = meta.pd.phase_id[I]
@@ -606,6 +608,8 @@ class NeighborhoodSearch:
                 meta.pd.density_adv_buffer[new_index] = meta.pd.density_adv[I]
 
         for I in ti.grouped(meta.pd.x):
+            if meta.pd.material[I] != FLUID:
+                continue
             meta.pd.grid_ids[I] = meta.pd.grid_ids_buffer[I]
             meta.pd.phase_id[I] = meta.pd.phase_id_buffer[I]
             meta.pd.x_0[I] = meta.pd.x_0_buffer[I]
@@ -689,7 +693,7 @@ class SPHBase:
         if meta.step_num % meta.parm.coupling_interval == 0:
             for rb in meta.rbs:
                 rb.substep()
-                oneway_coupling(rb)
+                # oneway_coupling(rb)
 
         animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
