@@ -633,7 +633,7 @@ class NeighborhoodSearch:
     def run_search(self):
         self.update_grid_id()
         self.prefix_sum_executor.run(meta.pd.grid_particles_num)
-        # self.counting_sort()
+        self.counting_sort()
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
