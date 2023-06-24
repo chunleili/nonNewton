@@ -232,7 +232,9 @@ def animate_particles_kernel(pos: ti.template(), dx_: ti.template()):
 # ---------------------------------------------------------------------------- #
 @ti.data_oriented
 class RigidBody:
-    def __init__(self, init_pos, phase_id):
+    def __init__(self, extern_pos, phase_id):
+        init_pos = extern_pos.to_numpy().copy()
+
         self.phase_id = phase_id
         self.num_particles = init_pos.shape[0]
         self.dt = meta.parm.dt[None]
@@ -540,8 +542,7 @@ def initialize_particles(pd: ParticleData):
 
         # init rigid bodies
         if phase.solid_type == RIGID:
-            rb_init_pos = read_ply_particles(sph_root_path + phase.cfg["geometryFile"])
-            rb = RigidBody(rb_init_pos, phase.uid)
+            rb = RigidBody(meta.pd.x, phase.uid)
             meta.rbs.append(rb)
 
 
