@@ -288,16 +288,16 @@ class RigidBody:
         q_inv: ti.template(),
         radius_vector: ti.template(),
     ):
-        #  update vel and pos firtly
-        gravity = self.gravity
-        for i in range(num_particles):
-            positions0[i] = positions[i]
-            f = gravity
-            velocities[i] += mass_inv * f * dt
-            positions[i] += velocities[i] * dt
-            if positions[i].y < 0.0:
-                positions[i] = positions0[i]
-                positions[i].y = 0.0
+        # #  update vel and pos firtly
+        # gravity = self.gravity
+        # for i in range(num_particles):
+        #     positions0[i] = positions[i]
+        #     f = gravity
+        #     velocities[i] += mass_inv * f * dt
+        #     positions[i] += velocities[i] * dt
+        #     if positions[i].y < 0.0:
+        #         positions[i] = positions0[i]
+        #         positions[i].y = 0.0
 
         # compute the new(matched shape) mass center
         c = ti.Vector([0.0, 0.0, 0.0])
@@ -316,7 +316,7 @@ class RigidBody:
         # update velocities and positions
         for i in range(num_particles):
             positions[i] = c + R @ radius_vector[i]
-            velocities[i] = (positions[i] - positions0[i]) / dt
+            # velocities[i] = (positions[i] - positions0[i]) / dt
 
     @ti.kernel
     def compute_radius_vector(self, num_particles: int, positions: ti.template(), radius_vector: ti.template()):
@@ -633,7 +633,7 @@ class NeighborhoodSearch:
     def run_search(self):
         self.update_grid_id()
         self.prefix_sum_executor.run(meta.pd.grid_particles_num)
-        self.counting_sort()
+        # self.counting_sort()
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
@@ -698,6 +698,8 @@ class SPHBase:
         for rb in meta.rbs:
             for i in range(meta.parm.coupling_interval):
                 rb.substep()
+                self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+
                 # oneway_coupling(rb)
                 # print("rb: ", rb.phase_id, "step: ", meta.step_num)
 
@@ -868,7 +870,7 @@ class RigidBodySolver(SPHBase):
 
     def substep(self):
         self.solve_constraints(self.phase_id)
-        self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+        # self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
 
     @ti.func
     def compute_com(self, phase_id):
@@ -1339,8 +1341,8 @@ def initialize():
     meta.rbs = []
     for phase in meta.phase_info.values():
         if phase.solid_type == RIGID:
-            # rb = RigidBody(meta.pd.x, phase.uid)
-            rb = RigidBodySolver(phase.uid)
+            rb = RigidBody(meta.pd.x, phase.uid)
+            # rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
 
 
