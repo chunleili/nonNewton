@@ -1,6 +1,6 @@
 本repo是实现 An Unified Particle-Based Framework for non-Newtonian Behaviours Simulation 的代码
 
-## 1. 文件结构
+## 1. File Structure
 
 SPH: 本论文的原本的代码。
 - data/scenes: 场景文件
@@ -20,9 +20,12 @@ Roadmap
 - Becker elasticity
 - plasticity and viscoelasticity
 
-## 3. Code Explanation
+## 3. Code Convention
 meta 是一个全局object, 所有全局变量都挂在meta上面。好处是可以在任何地方访问到这些全局变量。但一定要注意执行顺序。
 
-meta.pd: ParticleData object 所有粒子数据变量, 均为 taichi field。例如meta.pd.x 是粒子位置，meta.pd.v， meta.pd.acceleration等等。
-meta.parm: 所有constant参数
-meta.ns: NeighborhoodSearch。
+- meta.pd: ParticleData object 所有粒子数据变量, 均为 taichi field。例如:
+  - meta.pd.x 是粒子位置,
+  - meta.pd.v 是粒子速度
+  - meta.pd.acceleration是粒子加速度等等。
+- meta.parm: 所有constant参数
+- meta.ns: NeighborhoodSearch。
