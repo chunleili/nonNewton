@@ -139,6 +139,12 @@ def range_assign(start: int, end: int, value: ti.template(), container: ti.templ
 
 
 @ti.kernel
+def assign(value: ti.template(), container: ti.template()):
+    for i in container:
+        container[i] = value
+
+
+@ti.kernel
 def range_copy(dst: ti.template(), src: ti.template(), start: int):
     """
     将src的内容复制到 dst 的start开始位置
@@ -683,6 +689,8 @@ class SPHBase:
         print("step: ", meta.step_num)
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
+
+        assign(self.gravity, meta.pd.acceleration)
         if meta.fluid_particle_num > 0:
             self.substep()
 
@@ -842,8 +850,8 @@ class SPHBase:
         # Update position
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.is_dynamic[p_i]:
-                # if is_dynamic_rigid_body(p_i):
-                #     meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
+                if is_dynamic_rigid_body(p_i):
+                    meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
                 meta.pd.x[p_i] += self.dt[None] * meta.pd.v[p_i]
 
 
