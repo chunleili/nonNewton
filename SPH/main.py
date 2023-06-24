@@ -585,8 +585,8 @@ class NeighborhoodSearch:
             )
 
         for I in ti.grouped(meta.pd.grid_ids):
-            if meta.pd.material[I] != FLUID:
-                continue
+            # if meta.pd.material[I] != FLUID:
+            #     continue
             new_index = meta.pd.grid_ids_new[I]
             meta.pd.grid_ids_buffer[new_index] = meta.pd.grid_ids[I]
             meta.pd.phase_id_buffer[new_index] = meta.pd.phase_id[I]
@@ -608,8 +608,8 @@ class NeighborhoodSearch:
                 meta.pd.density_adv_buffer[new_index] = meta.pd.density_adv[I]
 
         for I in ti.grouped(meta.pd.x):
-            if meta.pd.material[I] != FLUID:
-                continue
+            # if meta.pd.material[I] != FLUID:
+            #     continue
             meta.pd.grid_ids[I] = meta.pd.grid_ids_buffer[I]
             meta.pd.phase_id[I] = meta.pd.phase_id_buffer[I]
             meta.pd.x_0[I] = meta.pd.x_0_buffer[I]
