@@ -372,8 +372,8 @@ class Parameter:
         self.boundary_viscosity = get_cfg("boundaryViscosity", 0.0)
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
-        self.sticky_coeff = get_cfg("stickyCoefficient", 0.5)
-        self.collision_coeff = get_cfg("collisionCoefficient", 0.999)
+        self.sticky_coeff = get_cfg("stickyCoefficient", 0.999)
+        self.collision_coeff = get_cfg("collisionCoefficient", 0.5)
         # Grid related properties
         self.grid_size = self.support_radius
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
