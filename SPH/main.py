@@ -697,7 +697,7 @@ class SPHBase:
         # if meta.step_num % meta.parm.coupling_interval == 0:
         for rb in meta.rbs:
             for i in range(meta.parm.coupling_interval):
-                rb.substep(rb.phase_id)
+                rb.substep()
                 # oneway_coupling(rb)
                 # print("rb: ", rb.phase_id, "step: ", meta.step_num)
 
@@ -866,8 +866,8 @@ class RigidBodySolver(SPHBase):
         self.compute_rigid_rest_cm(phase_id)
         deep_copy(meta.pd.x_0, meta.pd.x)
 
-    def substep(self, phase_id):
-        self.solve_constraints(phase_id)
+    def substep(self):
+        self.solve_constraints(self.phase_id)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
 
     @ti.func
