@@ -358,8 +358,8 @@ class Parameter:
 
     def __init__(self):
         self.domain_start = np.array(get_cfg("domainStart", [0.0, 0.0, 0.0]))
-        self.domian_end = np.array(get_cfg("domainEnd", [1.0, 1.0, 1.0]))
-        self.domain_size = self.domian_end - self.domain_start
+        self.domain_end = np.array(get_cfg("domainEnd", [1.0, 1.0, 1.0]))
+        self.domain_size = self.domain_end - self.domain_start
         self.dim = len(self.domain_size)
         self.simulation_method = get_cfg("simulationMethod")
         self.particle_radius = get_cfg("particleRadius", 0.01)
@@ -1312,7 +1312,7 @@ class DFSPHSolver(SPHBase):
         self.pressure_solve()
 
 
-def make_doaminbox():
+def make_domainbox():
     # Draw the lines for domain
     x_max, y_max, z_max = get_cfg("domainEnd")
     box_anchors = ti.Vector.field(3, dtype=ti.f32, shape=8)
@@ -1379,7 +1379,7 @@ def main():
     background_color = BLACK
     particle_color = WHITE
 
-    box_anchors, box_lines_indices = make_doaminbox()
+    box_anchors, box_lines_indices = make_domainbox()
 
     cnt = 0
     meta.paused = True
