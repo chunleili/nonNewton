@@ -531,11 +531,6 @@ def initialize_particles(pd: ParticleData):
         range_assign(start, end, phase.is_dynamic, pd.is_dynamic)
         range_assign(start, end, phase.uid, pd.phase_id)
 
-        # init rigid bodies
-        if phase.solid_type == RIGID:
-            rb = RigidBody(meta.pd.x, phase.uid)
-            meta.rbs.append(rb)
-
 
 # ---------------------------------------------------------------------------- #
 #                              NeighborhoodSearch                              #
@@ -1267,12 +1262,17 @@ def make_doaminbox():
 
 def initialize():
     meta.parm = Parameter()
-    meta.rbs = []
     meta.particle_max_num, meta.fluid_particle_num = load_particles(meta.phase_info)
     meta.pd = ParticleData(meta.particle_max_num, meta.parm.grid_num)
     initialize_particles(meta.pd)  # fill the taichi fields
 
     meta.ns = NeighborhoodSearch()
+
+    meta.rbs = []
+    for phase in meta.phase_info.values():
+        if phase.solid_type == RIGID:
+            rb = RigidBody(meta.pd.x, phase.uid)
+            meta.rbs.append(rb)
 
 
 # ---------------------------------------------------------------------------- #
