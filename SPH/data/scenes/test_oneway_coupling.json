@@ -17,7 +17,8 @@
 	],
 	"SolidParticles":[
 		{
-			"geometryFile": "./data/models/cube.ply"
+			"geometryFile": "./data/models/cube.ply",
+			"solidType":"RIGID"
 		}
 	]
 }
