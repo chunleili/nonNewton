@@ -814,30 +814,38 @@ class SPHBase:
 
     @ti.kernel
     def enforce_boundary_3D(self, positions: ti.template(), vel: ti.template(), particle_type: int):
+        xmax = meta.parm.domain_end[0] - meta.parm.padding
+        ymax = meta.parm.domain_end[1] - meta.parm.padding
+        zmax = meta.parm.domain_end[2] - meta.parm.padding
+        xmin = meta.parm.domain_start[0] + meta.parm.padding
+        ymin = meta.parm.domain_start[1] + meta.parm.padding
+        zmin = meta.parm.domain_start[2] + meta.parm.padding
+
         for p_i in ti.grouped(positions):
             if meta.pd.is_dynamic[p_i] and meta.pd.material[p_i] == particle_type:
+                noize = ti.random() * 0.01
                 pos = positions[p_i]
                 collision_normal = ti.Vector([0.0, 0.0, 0.0])
-                if pos[0] > meta.parm.domain_size[0] - meta.parm.padding:
+                if pos[0] > xmax:
                     collision_normal[0] += 1.0
-                    positions[p_i][0] = meta.parm.domain_size[0] - meta.parm.padding
-                if pos[0] <= meta.parm.padding:
+                    positions[p_i][0] = xmax + noize
+                if pos[0] <= xmin:
                     collision_normal[0] += -1.0
-                    positions[p_i][0] = meta.parm.padding
+                    positions[p_i][0] = xmin + noize
 
-                if pos[1] > meta.parm.domain_size[1] - meta.parm.padding:
+                if pos[1] > ymax:
                     collision_normal[1] += 1.0
-                    positions[p_i][1] = meta.parm.domain_size[1] - meta.parm.padding
-                if pos[1] <= meta.parm.padding:
+                    positions[p_i][1] = ymax + noize
+                if pos[1] <= ymin:
                     collision_normal[1] += -1.0
-                    positions[p_i][1] = meta.parm.padding
+                    positions[p_i][1] = ymin + noize
 
-                if pos[2] > meta.parm.domain_size[2] - meta.parm.padding:
+                if pos[2] > zmax:
                     collision_normal[2] += 1.0
-                    positions[p_i][2] = meta.parm.domain_size[2] - meta.parm.padding
-                if pos[2] <= meta.parm.padding:
+                    positions[p_i][2] = zmax + noize
+                if pos[2] <= zmin:
                     collision_normal[2] += -1.0
-                    positions[p_i][2] = meta.parm.padding
+                    positions[p_i][2] = zmin + noize
 
                 collision_normal_length = collision_normal.norm()
                 if collision_normal_length > 1e-6:
