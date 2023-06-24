@@ -372,6 +372,8 @@ class Parameter:
         self.boundary_viscosity = get_cfg("boundaryViscosity", 0.0)
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
+        self.sticky_coeff = get_cfg("stickyCoefficient", 0.5)
+        self.collision_coeff = get_cfg("collisionCoefficient", 0.999)
         # Grid related properties
         self.grid_size = self.support_radius
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
@@ -809,8 +811,9 @@ class SPHBase:
     @ti.func
     def simulate_collisions(self, p_i, normal, vel):
         # Collision factor, assume roughly (1-c_f)*velocity loss after collision
-        c_f = 0.5
+        c_f = meta.parm.collision_coeff  # ~0.5
         vel[p_i] -= (1.0 + c_f) * vel[p_i].dot(normal) * normal
+        vel[p_i] *= meta.parm.sticky_coeff  # sticky wall: ~0.999
 
     @ti.kernel
     def enforce_boundary_3D(self, positions: ti.template(), vel: ti.template(), particle_type: int):
