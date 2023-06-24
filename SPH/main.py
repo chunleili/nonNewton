@@ -147,6 +147,12 @@ def range_copy(dst: ti.template(), src: ti.template(), start: int):
         dst[start + i] = src[i]
 
 
+@ti.kernel
+def deep_copy(dst: ti.template(), src: ti.template()):
+    for i in src:
+        dst[i] = src[i]
+
+
 def color_selector(cfg, default=WHITE):
     if "color" not in cfg:
         return default
