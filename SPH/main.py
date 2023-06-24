@@ -371,7 +371,7 @@ class Parameter:
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.padding = self.grid_size
 
-        self.coupling_interval = get_cfg("couplingIntervals", 1)
+        self.coupling_interval = get_cfg("couplingInterval", 1)
 
 
 # ---------------------------------------------------------------------------- #
@@ -680,15 +680,20 @@ class SPHBase:
         self.dt = meta.parm.dt
 
     def step(self):
+        print("step: ", meta.step_num)
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
         if meta.fluid_particle_num > 0:
             self.substep()
 
-        if meta.step_num % meta.parm.coupling_interval == 0:
-            for rb in meta.rbs:
-                rb.substep()
+        # if meta.step_num % meta.parm.coupling_interval == 0:
+        for rb in meta.rbs:
+            for i in range(meta.parm.coupling_interval):
+                rb.substep(rb.phase_id)
                 # oneway_coupling(rb)
+                # print("rb: ", rb.phase_id, "step: ", meta.step_num)
+
+        self.advect()
 
         animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
@@ -832,6 +837,71 @@ class SPHBase:
     def grad_w_ij(self, p_i: int, p_j: int):
         return self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
 
+    @ti.kernel
+    def advect(self):
+        # Update position
+        for p_i in ti.grouped(meta.pd.x):
+            if meta.pd.is_dynamic[p_i]:
+                # if is_dynamic_rigid_body(p_i):
+                #     meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
+                meta.pd.x[p_i] += self.dt[None] * meta.pd.v[p_i]
+
+
+# ---------------------------------------------------------------------------- #
+#                                  Rigid body                                  #
+# ---------------------------------------------------------------------------- #
+class RigidBodySolver(SPHBase):
+    def __init__(self, phase_id):
+        super().__init__()
+        self.phase_id = phase_id
+        self.rigid_rest_cm = ti.Vector.field(3, dtype=ti.f32, shape=())
+        self.compute_rigid_rest_cm(phase_id)
+        deep_copy(meta.pd.x_0, meta.pd.x)
+
+    def substep(self, phase_id):
+        self.solve_constraints(phase_id)
+        self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+
+    @ti.func
+    def compute_com(self, phase_id):
+        sum_m = 0.0
+        cm = ti.Vector([0.0, 0.0, 0.0])
+        for p_i in range(meta.particle_max_num):
+            if is_dynamic_rigid_body(p_i) and meta.pd.phase_id[p_i] == phase_id:
+                mass = meta.parm.m_V0 * meta.pd.density[p_i]
+                cm += mass * meta.pd.x[p_i]
+                sum_m += mass
+        cm /= sum_m
+        return cm
+
+    @ti.kernel
+    def compute_rigid_rest_cm(self, phase_id: int):
+        self.rigid_rest_cm[None] = self.compute_com(phase_id)
+
+    @ti.kernel
+    def solve_constraints(self, phase_id: int) -> ti.types.matrix(3, 3, float):
+        # compute center of mass
+        cm = self.compute_com(phase_id)
+        # A
+        A = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        for p_i in range(meta.particle_max_num):
+            if is_dynamic_rigid_body(p_i) and meta.pd.phase_id[p_i] == phase_id:
+                q = meta.pd.x_0[p_i] - self.rigid_rest_cm[None]
+                p = meta.pd.x[p_i] - cm
+                A += meta.parm.m_V0 * meta.pd.density[p_i] * p.outer_product(q)
+
+        R, S = ti.polar_decompose(A)
+
+        if all(abs(R) < 1e-6):
+            R = ti.Matrix.identity(ti.f32, 3)
+
+        for p_i in range(meta.particle_max_num):
+            if is_dynamic_rigid_body(p_i) and meta.pd.phase_id[p_i] == phase_id:
+                goal = cm + R @ (meta.pd.x_0[p_i] - self.rigid_rest_cm[None])
+                corr = (goal - meta.pd.x[p_i]) * 1.0
+                meta.pd.x[p_i] += corr
+        return R
+
 
 # ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
@@ -940,15 +1010,6 @@ class DFSPHSolver(SPHBase):
             if meta.pd.material[p_i] == FLUID:
                 meta.ns.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
                 meta.pd.acceleration[p_i] = d_v
-
-    @ti.kernel
-    def advect(self):
-        # Update position
-        for p_i in ti.grouped(meta.pd.x):
-            if meta.pd.is_dynamic[p_i]:
-                if is_dynamic_rigid_body(p_i):
-                    meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
-                meta.pd.x[p_i] += self.dt[None] * meta.pd.v[p_i]
 
     @ti.kernel
     def compute_DFSPH_factor(self):
@@ -1239,7 +1300,6 @@ class DFSPHSolver(SPHBase):
         self.compute_non_pressure_forces()
         self.predict_velocity()
         self.pressure_solve()
-        self.advect()
 
 
 def make_doaminbox():
@@ -1271,7 +1331,8 @@ def initialize():
     meta.rbs = []
     for phase in meta.phase_info.values():
         if phase.solid_type == RIGID:
-            rb = RigidBody(meta.pd.x, phase.uid)
+            # rb = RigidBody(meta.pd.x, phase.uid)
+            rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
 
 
