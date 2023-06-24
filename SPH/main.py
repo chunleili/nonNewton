@@ -416,7 +416,7 @@ def load_particles(phase_info):
                 cfg_i, cnt_elastic, elastic_par_num, 3000, SOLID, ELASTIC, YELLOW, 1
             )
 
-    solid_particle_num = elastic_par_num
+    solid_particle_num = elastic_par_num - fluid_particle_num
     particle_max_num = fluid_particle_num + solid_particle_num
     return particle_max_num, fluid_particle_num
 

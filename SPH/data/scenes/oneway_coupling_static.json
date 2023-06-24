@@ -12,12 +12,12 @@
 	},
 	"FluidParticles": [
 		{
-			"geometryFile": "./data/models/cube.ply"
+			"geometryFile": "./data/models/cube2.ply"
 		}
 	],
 	"SolidParticles":[
 		{
-			"geometryFile": "./data/models/cube2.ply"
+			"geometryFile": "./data/models/cube.ply"
 		}
 	]
 }
