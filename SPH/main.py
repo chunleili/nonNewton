@@ -386,45 +386,28 @@ class Parameter:
 # ---------------------------------------------------------------------------- #
 # load all particles info into phase_info, alway first fluid, second static solid, third dynamic solid.
 def load_particles(phase_info):
-    # fluid particles
-    fluid_particle_num = 0
     cfgs = get_fluid_cfg()
-    cnt = 0
+    fluid_particle_num = 0
+    cnt_fluid = 0
     for cfg_i in cfgs:
-        pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
-        pos = transform(pos, cfg_i)
-        parnum = pos.shape[0]
-        phase_id = cfg_i.get("id", cnt)
-        cnt += 1
-        color = color_selector(cfg_i, BLUE)
-        phase_info[phase_id] = PhaseInfo(
-            uid=phase_id,
-            parnum=parnum,
-            startnum=fluid_particle_num,
-            material=FLUID,
-            cfg=cfg_i,
-            is_dynamic=True,
-            pos=pos,
-            color=color,
-        )
-        fluid_particle_num += parnum
+        fluid_particle_num, cnt_fluid = parse_cfg(cfg_i, cnt_fluid, fluid_particle_num, 0, FLUID, STATIC, BLUE, 1)
 
     cfgs = get_solid_cfg()
-    static_par_num = 0
+    static_par_num = fluid_particle_num
     cnt_static = 0
     for cfg_i in cfgs:
         solid_type = solid_type_selector(cfg_i)
         if solid_type == STATIC:
             static_par_num, cnt_static = parse_cfg(cfg_i, cnt_static, static_par_num, 1000, SOLID, STATIC, WHITE, 0)
 
-    rigid_par_num = 0
+    rigid_par_num = static_par_num
     cnt_rigid = 0
     for cfg_i in cfgs:
         solid_type = solid_type_selector(cfg_i)
         if solid_type == RIGID:
             rigid_par_num, cnt_rigid = parse_cfg(cfg_i, cnt_rigid, rigid_par_num, 2000, SOLID, RIGID, ORANGE, 1)
 
-    elastic_par_num = 0
+    elastic_par_num = rigid_par_num
     cnt_elastic = 0
     for cfg_i in cfgs:
         solid_type = solid_type_selector(cfg_i)
@@ -433,7 +416,7 @@ def load_particles(phase_info):
                 cfg_i, cnt_elastic, elastic_par_num, 3000, SOLID, ELASTIC, YELLOW, 1
             )
 
-    solid_particle_num = static_par_num + rigid_par_num + elastic_par_num
+    solid_particle_num = elastic_par_num
     particle_max_num = fluid_particle_num + solid_particle_num
     return particle_max_num, fluid_particle_num
 
