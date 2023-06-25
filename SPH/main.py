@@ -747,7 +747,7 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
 
             grid_index_3d = self.pos_to_index(meta.pd.x[i])
             grid_index_hash = hash_3d(grid_index_3d, self.hashtable_size)
-            k = self.grid_particles_num[grid_index_hash] - 1
+            k = self.grid_particles_num[grid_index] - 1
             self.particles_in_grid_hashtable[grid_index_hash, k] = i
 
         for I in ti.grouped(self.grid_particles_num):
@@ -762,6 +762,7 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         self.prefix_sum_executor.run(self.grid_particles_num)
         self.counting_sort()
         self.store_neighbors()
+        ...
 
     @ti.func
     def get_particles_in_grid(self, grid_index_3d, k):
@@ -774,7 +775,9 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
             grid_index = self.flatten_grid_index(center_cell + offset)
-            for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
+            # for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
+            for k in range(self.grid_particles_num[grid_index]):
+                p_j = self.get_particles_in_grid(center_cell + offset, k)
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
