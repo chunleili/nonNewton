@@ -239,6 +239,10 @@ def animate_particles_kernel(pos: ti.template(), dx_: ti.template()):
         pos[i][2] += dx_[2]
 
 
+def to_numpy(field):
+    return field.to_numpy()
+
+
 # ---------------------------------------------------------------------------- #
 #                                   RigidBody                                  #
 # ---------------------------------------------------------------------------- #
@@ -680,6 +684,108 @@ class NeighborhoodSearch:
                         self.num_neighbors[p_i] += 1
 
 
+@ti.data_oriented
+class NeighborhoodSearchSpatialHashing:
+    def __init__(self):
+        self.particle_max_num = meta.particle_max_num
+        self.grid_size = meta.parm.support_radius
+        self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
+        self.hashtable_size = 2 * self.particle_max_num
+
+        # Particle num of each grid
+        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
+        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
+        # Grid id for each particle
+        self.grid_ids = ti.field(int, shape=self.particle_max_num)
+        self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
+
+        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
+
+        self.max_num_neighbors = 50
+        self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
+        self.num_neighbors = ti.field(int, shape=self.particle_max_num)
+
+        self.max_num_particles_in_grid = 100
+        self.particles_in_grid_hashtable = ti.field(
+            int, shape=(self.hashtable_size, self.max_num_particles_in_grid), needs_grad=False
+        )
+
+    @ti.func
+    def pos_to_index(self, pos):
+        return (pos / self.grid_size).cast(int)  # 3d
+
+    @ti.func
+    def flatten_grid_index(self, grid_index):
+        return (
+            grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
+        )  # filling order: z, y, x
+
+    @ti.func
+    def get_flatten_grid_index(self, pos):
+        return self.flatten_grid_index(self.pos_to_index(pos))
+
+    @ti.func
+    def get_neighbor(self, i, j):
+        return self.neighbors[i, j]
+
+    @ti.func
+    def get_num_neighbors(self, i):
+        return self.num_neighbors[i]
+
+    @ti.func
+    def hash_3d(self, grid_index):
+        return (grid_index[0] * 73856093 + grid_index[1] * 19349663 + grid_index[2] * 83492791) % self.hashtable_size
+
+    @ti.kernel
+    def update_grid_id(self):
+        for I in ti.grouped(self.grid_particles_num):
+            self.grid_particles_num[I] = 0
+        for I in ti.grouped(meta.pd.x):
+            grid_index = self.get_flatten_grid_index(meta.pd.x[I])
+            self.grid_ids[I] = grid_index
+            ti.atomic_add(self.grid_particles_num[grid_index], 1)
+
+            center_cell = self.pos_to_index(meta.pd.x[I])
+            center_cell_hash = self.hash_3d(center_cell)
+            k = self.grid_particles_num[center_cell_hash] - 1
+            self.particles_in_grid_hashtable[center_cell_hash, k] = I
+
+        for I in ti.grouped(self.grid_particles_num):
+            self.grid_particles_num_temp[I] = self.grid_particles_num[I]
+
+    def run_search(self):
+        self.update_grid_id()
+        self.num_neighbors.fill(0)
+        self.neighbors.fill(-1)
+        self.store_neighbors()
+
+    @ti.func
+    def get_particles_in_grid(self, grid_index, k):
+        """Some particles not in this grid may occur as well, because we use a hashtable"""
+        hash_index = self.hash_3d(grid_index)
+        return self.particles_in_grid_hashtable[hash_index, k]
+
+    @ti.func
+    def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
+        center_cell = self.pos_to_index(meta.pd.x[p_i])
+        for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+            grid_index = self.flatten_grid_index(center_cell + offset)
+            for p_j in self.get_particles_in_grid(grid_index):
+                if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+                    task(p_i, p_j, ret)
+
+    @ti.kernel
+    def store_neighbors(self):
+        for p_i in ti.grouped(meta.pd.x):
+            num_neighbors = 0
+            self.for_all_neighbors(p_i, self.store_neighbors_task, num_neighbors)
+
+    @ti.func
+    def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
+        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
+        self.num_neighbors[p_i] += 1
+
+
 # ---------------------------------------------------------------------------- #
 #                             fluid solid coupling                             #
 # ---------------------------------------------------------------------------- #
@@ -726,6 +832,10 @@ class SPHBase:
         assign(self.gravity, meta.pd.acceleration)
         if meta.fluid_particle_num > 0:
             self.substep()
+
+        if meta.num_elastic_bodies > 0:
+            for elas in meta.elastic_bodies:
+                elas.step()
 
         # if meta.step_num % meta.parm.coupling_interval == 0:
         for rb in meta.rbs:
@@ -949,6 +1059,7 @@ class SPHBase:
 # ---------------------------------------------------------------------------- #
 #                                  Rigid body                                  #
 # ---------------------------------------------------------------------------- #
+@ti.data_oriented
 class RigidBodySolver(SPHBase):
     def __init__(self, phase_id):
         super().__init__()
@@ -1005,6 +1116,7 @@ class RigidBodySolver(SPHBase):
 # ---------------------------------------------------------------------------- #
 #                                   elasticity                                  #
 # ---------------------------------------------------------------------------- #
+# FIXME:
 vec6 = ti.types.vector(6, ti.f32)
 mat6 = ti.types.matrix(6, 6, ti.f32)
 vec3 = ti.types.vector(3, ti.f32)
@@ -1014,8 +1126,9 @@ class Elasticity(SPHBase):
     """elasticity(Becker2009)"""
 
     def __init__(self, numParticles) -> None:
-        self.m_youngsModulus = 1e5
-        self.m_poissonRatio = 0.3
+        super().__init__()
+        self.m_youngsModulus = 25e4
+        self.m_poissonRatio = 0.33
 
         self.numParticles = numParticles
         self.max_num_neighbors = 50
@@ -1034,8 +1147,10 @@ class Elasticity(SPHBase):
         self.m_alpha[None] = 0.0
 
         self.initValues()
+        ...
 
     def initValues(self):
+        meta.ns.run_search()
         self.compute_densities()
         self.initValues_kernel()
 
@@ -1049,7 +1164,7 @@ class Elasticity(SPHBase):
 
             # only neighbors in same phase will influence elasticity
             numNeighbors = meta.ns.get_num_neighbors(i)
-            self.m_numInitialNeighbors = numNeighbors
+            self.m_numInitialNeighbors[i] = numNeighbors
             for j in range(numNeighbors):
                 self.m_initialNeighbors[i, j] = meta.ns.get_neighbor(i, j)
 
@@ -1060,7 +1175,7 @@ class Elasticity(SPHBase):
             # // mark all particles in the bounding box as fixed
             # determineFixedParticles()
 
-    def step(self):
+    def substep(self):
         self.computeRotations()
         self.computeStress()
         self.computeForces()
@@ -1607,6 +1722,14 @@ def initialize():
             rb = RigidBody(meta.pd.x, phase.uid)
             # rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
+
+    meta.elastic_bodies = []
+    meta.num_elastic_bodies = 0
+    for phase in meta.phase_info.values():
+        if phase.solid_type == ELASTIC:
+            elas = Elasticity(meta.particle_max_num)
+            meta.elastic_bodies.append(elas)
+            meta.num_elastic_bodies += 1
 
 
 # ---------------------------------------------------------------------------- #
