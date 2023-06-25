@@ -665,32 +665,32 @@ class NeighborhoodSearch:
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
-    # @ti.kernel
-    # def store_neighbors(self):
-    #     for p_i in ti.grouped(meta.pd.x):
-    #         self.for_all_neighbors(p_i, self.store_neighbors_task, None)
-
-    # @ti.func
-    # def store_neighbors_task(self, p_i, p_j, ret):
-    #     self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
-    #     self.num_neighbors[p_i] += 1
-
     @ti.kernel
     def store_neighbors(self):
-        for p_i in range(self.particle_max_num):
-            center_cell = self.pos_to_index(meta.pd.x[p_i])
-            for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-                grid_index = self.flatten_grid_index(center_cell + offset)
-                for p_j in range(
-                    self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
-                ):
-                    if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-                        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
-                        self.num_neighbors[p_i] += 1
+        for p_i in ti.grouped(meta.pd.x):
+            self.for_all_neighbors(p_i, self.store_neighbors_task, None)
+
+    @ti.func
+    def store_neighbors_task(self, p_i, p_j, ret):
+        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
+        self.num_neighbors[p_i] += 1
+
+    # @ti.kernel
+    # def store_neighbors(self):
+    #     for p_i in range(self.particle_max_num):
+    #         center_cell = self.pos_to_index(meta.pd.x[p_i])
+    #         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+    #             grid_index = self.flatten_grid_index(center_cell + offset)
+    #             for p_j in range(
+    #                 self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
+    #             ):
+    #                 if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+    #                     self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
+    #                     self.num_neighbors[p_i] += 1
 
 
 @ti.data_oriented
-class NeighborhoodSearchSpatialHashing:
+class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
     def __init__(self):
         self.particle_max_num = meta.particle_max_num
         self.grid_size = meta.parm.support_radius
@@ -702,6 +702,7 @@ class NeighborhoodSearchSpatialHashing:
         self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
         # Grid id for each particle
         self.grid_ids = ti.field(int, shape=self.particle_max_num)
+        self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
         self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
 
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
@@ -745,9 +746,7 @@ class NeighborhoodSearchSpatialHashing:
             ti.atomic_add(self.grid_particles_num[grid_index], 1)
 
             grid_index_3d = self.pos_to_index(meta.pd.x[i])
-
             grid_index_hash = hash_3d(grid_index_3d, self.hashtable_size)
-
             k = self.grid_particles_num[grid_index_hash] - 1
             self.particles_in_grid_hashtable[grid_index_hash, k] = i
 
@@ -755,10 +754,13 @@ class NeighborhoodSearchSpatialHashing:
             self.grid_particles_num_temp[I] = self.grid_particles_num[I]
 
     def run_search(self):
-        self.particles_in_grid_hashtable.fill(-1)
-        self.update_grid_id()
         self.num_neighbors.fill(0)
         self.neighbors.fill(-1)
+        self.particles_in_grid_hashtable.fill(-1)
+
+        self.update_grid_id()
+        self.prefix_sum_executor.run(self.grid_particles_num)
+        self.counting_sort()
         self.store_neighbors()
 
     @ti.func
@@ -771,10 +773,8 @@ class NeighborhoodSearchSpatialHashing:
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-            grid_index_3d = center_cell + offset
-            grid_index_1d = self.flatten_grid_index(grid_index_3d)
-            for k in range(self.grid_particles_num[grid_index_1d]):
-                p_j = self.get_particles_in_grid(grid_index_3d, k)
+            grid_index = self.flatten_grid_index(center_cell + offset)
+            for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
