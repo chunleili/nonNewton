@@ -374,11 +374,7 @@ class Parameter:
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
         self.sticky_coeff = get_cfg("stickyCoefficient", 0.999)
         self.collision_coeff = get_cfg("collisionCoefficient", 0.5)
-        # Grid related properties
-        self.grid_size = self.support_radius
-        self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
-        self.padding = self.grid_size
-
+        self.padding = self.support_radius
         self.coupling_interval = get_cfg("couplingInterval", 1)
 
 
@@ -451,9 +447,8 @@ def parse_cfg(cfg_i, cnt, startnum, phase_id_start, default_material, default_so
 class ParticleData:
     """A pure data class for particle data storage and management"""
 
-    def __init__(self, particle_max_num: int, grid_num):
+    def __init__(self, particle_max_num: int):
         self.particle_max_num = particle_max_num
-        self.grid_num = grid_num
 
         self.dim = 3
 
@@ -494,15 +489,6 @@ class ParticleData:
         if get_cfg("simulationMethod") == 4:
             self.dfsph_factor_buffer = ti.field(dtype=float, shape=self.particle_max_num)
             self.density_adv_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-
-        # Particle num of each grid
-        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-
-        # Grid id for each particle
-        self.grid_ids = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
 
 
 # ---------------------------------------------------------------------------- #
@@ -546,19 +532,27 @@ def initialize_particles(pd: ParticleData):
 @ti.data_oriented
 class NeighborhoodSearch:
     def __init__(self):
-        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(meta.pd.grid_particles_num.shape[0])
+        self.particle_max_num = meta.particle_max_num
+        self.grid_size = meta.parm.support_radius
+        self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
+
+        # Particle num of each grid
+        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
+        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
+        # Grid id for each particle
+        self.grid_ids = ti.field(int, shape=self.particle_max_num)
+        self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
+        self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
+
+        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
     @ti.func
     def pos_to_index(self, pos):
-        return (pos / meta.parm.grid_size).cast(int)
+        return (pos / self.grid_size).cast(int)
 
     @ti.func
     def flatten_grid_index(self, grid_index):
-        return (
-            grid_index[0] * meta.parm.grid_num[1] * meta.parm.grid_num[2]
-            + grid_index[1] * meta.parm.grid_num[2]
-            + grid_index[2]
-        )
+        return grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
 
     @ti.func
     def get_flatten_grid_index(self, pos):
@@ -566,32 +560,30 @@ class NeighborhoodSearch:
 
     @ti.kernel
     def update_grid_id(self):
-        for I in ti.grouped(meta.pd.grid_particles_num):
-            meta.pd.grid_particles_num[I] = 0
+        for I in ti.grouped(self.grid_particles_num):
+            self.grid_particles_num[I] = 0
         for I in ti.grouped(meta.pd.x):
             grid_index = self.get_flatten_grid_index(meta.pd.x[I])
-            meta.pd.grid_ids[I] = grid_index
-            ti.atomic_add(meta.pd.grid_particles_num[grid_index], 1)
-        for I in ti.grouped(meta.pd.grid_particles_num):
-            meta.pd.grid_particles_num_temp[I] = meta.pd.grid_particles_num[I]
+            self.grid_ids[I] = grid_index
+            ti.atomic_add(self.grid_particles_num[grid_index], 1)
+        for I in ti.grouped(self.grid_particles_num):
+            self.grid_particles_num_temp[I] = self.grid_particles_num[I]
 
     @ti.kernel
     def counting_sort(self):
         # FIXME: make it the actual particle num
-        for i in range(meta.pd.particle_max_num):
-            I = meta.pd.particle_max_num - 1 - i
+        for i in range(self.particle_max_num):
+            I = self.particle_max_num - 1 - i
             base_offset = 0
-            if meta.pd.grid_ids[I] - 1 >= 0:
-                base_offset = meta.pd.grid_particles_num[meta.pd.grid_ids[I] - 1]
-            meta.pd.grid_ids_new[I] = (
-                ti.atomic_sub(meta.pd.grid_particles_num_temp[meta.pd.grid_ids[I]], 1) - 1 + base_offset
-            )
+            if self.grid_ids[I] - 1 >= 0:
+                base_offset = self.grid_particles_num[self.grid_ids[I] - 1]
+            self.grid_ids_new[I] = ti.atomic_sub(self.grid_particles_num_temp[self.grid_ids[I]], 1) - 1 + base_offset
 
-        for I in ti.grouped(meta.pd.grid_ids):
+        for I in ti.grouped(self.grid_ids):
             # if meta.pd.material[I] != FLUID:
             #     continue
-            new_index = meta.pd.grid_ids_new[I]
-            meta.pd.grid_ids_buffer[new_index] = meta.pd.grid_ids[I]
+            new_index = self.grid_ids_new[I]
+            self.grid_ids_buffer[new_index] = self.grid_ids[I]
             meta.pd.phase_id_buffer[new_index] = meta.pd.phase_id[I]
             meta.pd.x_0_buffer[new_index] = meta.pd.x_0[I]
             meta.pd.x_buffer[new_index] = meta.pd.x[I]
@@ -613,7 +605,7 @@ class NeighborhoodSearch:
         for I in ti.grouped(meta.pd.x):
             # if meta.pd.material[I] != FLUID:
             #     continue
-            meta.pd.grid_ids[I] = meta.pd.grid_ids_buffer[I]
+            self.grid_ids[I] = self.grid_ids_buffer[I]
             meta.pd.phase_id[I] = meta.pd.phase_id_buffer[I]
             meta.pd.x_0[I] = meta.pd.x_0_buffer[I]
             meta.pd.x[I] = meta.pd.x_buffer[I]
@@ -634,7 +626,7 @@ class NeighborhoodSearch:
 
     def run_search(self):
         self.update_grid_id()
-        self.prefix_sum_executor.run(meta.pd.grid_particles_num)
+        self.prefix_sum_executor.run(self.grid_particles_num)
         self.counting_sort()
 
     @ti.func
@@ -642,9 +634,7 @@ class NeighborhoodSearch:
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
             grid_index = self.flatten_grid_index(center_cell + offset)
-            for p_j in range(
-                meta.pd.grid_particles_num[ti.max(0, grid_index - 1)], meta.pd.grid_particles_num[grid_index]
-            ):
+            for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
@@ -1538,7 +1528,7 @@ def make_domainbox():
 def initialize():
     meta.parm = Parameter()
     meta.particle_max_num, meta.fluid_particle_num = load_particles()
-    meta.pd = ParticleData(meta.particle_max_num, meta.parm.grid_num)
+    meta.pd = ParticleData(meta.particle_max_num)
     initialize_particles(meta.pd)  # fill the taichi fields
 
     meta.ns = NeighborhoodSearch()
