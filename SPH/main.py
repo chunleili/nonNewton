@@ -546,6 +546,10 @@ class NeighborhoodSearch:
 
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
+        self.max_num_neighbors = 50
+        self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
+        self.num_neighbors = ti.field(int, shape=self.particle_max_num)
+
     @ti.func
     def pos_to_index(self, pos):
         return (pos / self.grid_size).cast(int)
@@ -557,6 +561,14 @@ class NeighborhoodSearch:
     @ti.func
     def get_flatten_grid_index(self, pos):
         return self.flatten_grid_index(self.pos_to_index(pos))
+
+    @ti.func
+    def get_neighbor(self, i, j):
+        return self.neighbors[i, j]
+
+    @ti.func
+    def get_num_neighbors(self, i):
+        return self.num_neighbors[i]
 
     @ti.kernel
     def update_grid_id(self):
@@ -629,6 +641,10 @@ class NeighborhoodSearch:
         self.prefix_sum_executor.run(self.grid_particles_num)
         self.counting_sort()
 
+        self.num_neighbors.fill(0)
+        self.neighbors.fill(-1)
+        self.store_neighbors()
+
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
@@ -637,6 +653,31 @@ class NeighborhoodSearch:
             for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
+
+    # this is proved same, but I prefer the below one
+    # @ti.kernel
+    # def store_neighbors(self):
+    #     for p_i in ti.grouped(meta.pd.x):
+    #         num_neighbors=0
+    #         self.for_all_neighbors(p_i, self.store_neighbors_task, num_neighbors)
+
+    # @ti.func
+    # def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
+    #     self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
+    #     self.num_neighbors[p_i] += 1
+
+    @ti.kernel
+    def store_neighbors(self):
+        for p_i in range(self.particle_max_num):
+            center_cell = self.pos_to_index(meta.pd.x[p_i])
+            for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+                grid_index = self.flatten_grid_index(center_cell + offset)
+                for p_j in range(
+                    self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
+                ):
+                    if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+                        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
+                        self.num_neighbors[p_i] += 1
 
 
 # ---------------------------------------------------------------------------- #
@@ -755,6 +796,54 @@ class SPHBase:
                 factor = 1.0 - q
                 res = k * (-factor * factor) * grad_q
         return res
+
+    @ti.func
+    def compute_densities_task(self, p_i, p_j, ret: ti.template()):
+        x_i = meta.pd.x[p_i]
+        if meta.pd.material[p_j] == FLUID:
+            # Fluid neighbors
+            x_j = meta.pd.x[p_j]
+            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+        elif meta.pd.material[p_j] == SOLID:
+            # Boundary neighbors
+            ## Akinci2012
+            x_j = meta.pd.x[p_j]
+            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+
+    @ti.kernel
+    def compute_densities(self):
+        for p_i in ti.grouped(meta.pd.x):
+            if meta.pd.material[p_i] != FLUID:
+                continue
+            meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
+            den = 0.0
+            meta.ns.for_all_neighbors(p_i, self.compute_densities_task, den)
+            meta.pd.density[p_i] += den
+            meta.pd.density[p_i] *= self.density_0
+
+    # this is proved same, but let us keep it for now
+    # @ti.kernel
+    # def compute_densities_new(self):
+    #     for p_i in ti.grouped(meta.pd.x):
+    #         if meta.pd.material[p_i] != FLUID:
+    #             continue
+    #         meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
+    #         den = 0.0
+    #         num_neighbors = meta.ns.get_num_neighbors(p_i)
+    #         for k in range(num_neighbors):
+    #             p_j = meta.ns.get_neighbor(p_i, k)
+    #             x_i = meta.pd.x[p_i]
+    #             if meta.pd.material[p_j] == FLUID:
+    #                 # Fluid neighbors
+    #                 x_j = meta.pd.x[p_j]
+    #                 den += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #             elif meta.pd.material[p_j] == SOLID:
+    #                 # Boundary neighbors
+    #                 ## Akinci2012
+    #                 x_j = meta.pd.x[p_j]
+    #                 den += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #         meta.pd.density[p_i] += den
+    #         meta.pd.density[p_i] *= self.density_0
 
     @ti.func
     def viscosity_force(self, p_i, p_j, r):
@@ -914,7 +1003,7 @@ class RigidBodySolver(SPHBase):
 
 
 # ---------------------------------------------------------------------------- #
-#                                   elasticiy                                  #
+#                                   elasticity                                  #
 # ---------------------------------------------------------------------------- #
 vec6 = ti.types.vector(6, ti.f32)
 mat6 = ti.types.matrix(6, 6, ti.f32)
@@ -922,7 +1011,7 @@ vec3 = ti.types.vector(3, ti.f32)
 
 
 class Elasticity(SPHBase):
-    """Elasticiy(Becker2009)"""
+    """elasticity(Becker2009)"""
 
     def __init__(self, numParticles) -> None:
         self.m_youngsModulus = 1e5
@@ -947,8 +1036,10 @@ class Elasticity(SPHBase):
         self.initValues()
 
     def initValues(self):
+        self.compute_densities()
         self.initValues_kernel()
 
+    @ti.kernel
     def initValues_kernel(self):
         # // Store the neighbors in the reference configurations and
         # // compute the volume of each particle in rest state
@@ -957,14 +1048,14 @@ class Elasticity(SPHBase):
             self.m_initial_to_current_index[i] = i
 
             # only neighbors in same phase will influence elasticity
-            numNeighbors = get_num_neighbors(i)
+            numNeighbors = meta.ns.get_num_neighbors(i)
             self.m_numInitialNeighbors = numNeighbors
             for j in range(numNeighbors):
-                self.m_initialNeighbors[i, j] = get_neighbor(i, j)
+                self.m_initialNeighbors[i, j] = meta.ns.get_neighbor(i, j)
 
             # // Compute volume
-            density = compute_density(i, density)
-            self.m_restVolumes[i] = meta.pd.m[i] / density
+            # density = compute_density(i, density)
+            self.m_restVolumes[i] = meta.pd.m[i] / meta.pd.density[i]
 
             # // mark all particles in the bounding box as fixed
             # determineFixedParticles()
@@ -1122,30 +1213,6 @@ class DFSPHSolver(SPHBase):
         self.m_eps = 1e-5
         self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
         self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
-
-    @ti.func
-    def compute_densities_task(self, p_i, p_j, ret: ti.template()):
-        x_i = meta.pd.x[p_i]
-        if meta.pd.material[p_j] == FLUID:
-            # Fluid neighbors
-            x_j = meta.pd.x[p_j]
-            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
-        elif meta.pd.material[p_j] == SOLID:
-            # Boundary neighbors
-            ## Akinci2012
-            x_j = meta.pd.x[p_j]
-            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
-
-    @ti.kernel
-    def compute_densities(self):
-        for p_i in ti.grouped(meta.pd.x):
-            if meta.pd.material[p_i] != FLUID:
-                continue
-            meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
-            den = 0.0
-            meta.ns.for_all_neighbors(p_i, self.compute_densities_task, den)
-            meta.pd.density[p_i] += den
-            meta.pd.density[p_i] *= self.density_0
 
     @ti.func
     def compute_non_pressure_forces_task(self, p_i, p_j, ret: ti.template()):
@@ -1499,6 +1566,7 @@ class DFSPHSolver(SPHBase):
 
     def substep(self):
         self.compute_densities()
+        print(f"max density: {meta.pd.density.to_numpy().max()}")
         self.compute_DFSPH_factor()
         if self.enable_divergence_solver:
             self.divergence_solve()
