@@ -658,15 +658,13 @@ class NeighborhoodSearch:
                 if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
-    # this is proved same, but I prefer the below one
     # @ti.kernel
     # def store_neighbors(self):
     #     for p_i in ti.grouped(meta.pd.x):
-    #         num_neighbors=0
-    #         self.for_all_neighbors(p_i, self.store_neighbors_task, num_neighbors)
+    #         self.for_all_neighbors(p_i, self.store_neighbors_task, None)
 
     # @ti.func
-    # def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
+    # def store_neighbors_task(self, p_i, p_j, ret):
     #     self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
     #     self.num_neighbors[p_i] += 1
 
@@ -706,9 +704,7 @@ class NeighborhoodSearchSpatialHashing:
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
         self.max_num_particles_in_grid = 100
-        self.particles_in_grid_hashtable = ti.field(
-            int, shape=(self.hashtable_size, self.max_num_particles_in_grid), needs_grad=False
-        )
+        self.particles_in_grid_hashtable = ti.field(int, shape=(self.hashtable_size, self.max_num_particles_in_grid))
 
     @ti.func
     def pos_to_index(self, pos):
