@@ -243,6 +243,13 @@ def to_numpy(field):
     return field.to_numpy()
 
 
+@ti.func
+def hash_3d(grid_index_3d, hashtable_size: int):
+    num = grid_index_3d[0] * 73856093 + grid_index_3d[1] * 19349663 + grid_index_3d[2] * 83492791
+    res = num % hashtable_size
+    return res
+
+
 # ---------------------------------------------------------------------------- #
 #                                   RigidBody                                  #
 # ---------------------------------------------------------------------------- #
@@ -728,53 +735,53 @@ class NeighborhoodSearchSpatialHashing:
     def get_num_neighbors(self, i):
         return self.num_neighbors[i]
 
-    @ti.func
-    def hash_3d(self, grid_index):
-        return (grid_index[0] * 73856093 + grid_index[1] * 19349663 + grid_index[2] * 83492791) % self.hashtable_size
-
     @ti.kernel
     def update_grid_id(self):
         for I in ti.grouped(self.grid_particles_num):
             self.grid_particles_num[I] = 0
-        for I in ti.grouped(meta.pd.x):
-            grid_index = self.get_flatten_grid_index(meta.pd.x[I])
-            self.grid_ids[I] = grid_index
+        for i in range(self.particle_max_num):
+            grid_index = self.get_flatten_grid_index(meta.pd.x[i])
+            self.grid_ids[i] = grid_index
             ti.atomic_add(self.grid_particles_num[grid_index], 1)
 
-            center_cell = self.pos_to_index(meta.pd.x[I])
-            center_cell_hash = self.hash_3d(center_cell)
-            k = self.grid_particles_num[center_cell_hash] - 1
-            self.particles_in_grid_hashtable[center_cell_hash, k] = I
+            grid_index_3d = self.pos_to_index(meta.pd.x[i])
+
+            grid_index_hash = hash_3d(grid_index_3d, self.hashtable_size)
+
+            k = self.grid_particles_num[grid_index_hash] - 1
+            self.particles_in_grid_hashtable[grid_index_hash, k] = i
 
         for I in ti.grouped(self.grid_particles_num):
             self.grid_particles_num_temp[I] = self.grid_particles_num[I]
 
     def run_search(self):
+        self.particles_in_grid_hashtable.fill(-1)
         self.update_grid_id()
         self.num_neighbors.fill(0)
         self.neighbors.fill(-1)
         self.store_neighbors()
 
     @ti.func
-    def get_particles_in_grid(self, grid_index, k):
+    def get_particles_in_grid(self, grid_index_3d, k):
         """Some particles not in this grid may occur as well, because we use a hashtable"""
-        hash_index = self.hash_3d(grid_index)
+        hash_index = hash_3d(grid_index_3d, self.hashtable_size)
         return self.particles_in_grid_hashtable[hash_index, k]
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-            grid_index = self.flatten_grid_index(center_cell + offset)
-            for p_j in self.get_particles_in_grid(grid_index):
-                if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+            grid_index_3d = center_cell + offset
+            grid_index_1d = self.flatten_grid_index(grid_index_3d)
+            for k in range(self.grid_particles_num[grid_index_1d]):
+                p_j = self.get_particles_in_grid(grid_index_3d, k)
+                if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
                     task(p_i, p_j, ret)
 
     @ti.kernel
     def store_neighbors(self):
         for p_i in ti.grouped(meta.pd.x):
-            num_neighbors = 0
-            self.for_all_neighbors(p_i, self.store_neighbors_task, num_neighbors)
+            self.for_all_neighbors(p_i, self.store_neighbors_task, None)
 
     @ti.func
     def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
@@ -1710,7 +1717,8 @@ def initialize():
     meta.pd = ParticleData(meta.particle_max_num)
     initialize_particles(meta.pd)  # fill the taichi fields
 
-    meta.ns = NeighborhoodSearch()
+    # meta.ns = NeighborhoodSearch()
+    meta.ns = NeighborhoodSearchSpatialHashing()
 
     meta.rbs = []
     for phase in meta.phase_info.values():
