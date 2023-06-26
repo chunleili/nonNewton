@@ -700,27 +700,14 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         self.grid_size = meta.parm.support_radius
         self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
         self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
-        self.hashtable_size = 2 * self.particle_max_num
-
-        # Particle num of each grid
-        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-        # Grid id for each particle
-        self.grid_ids = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
-
-        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
-
         self.max_num_neighbors = 100
+        self.max_num_particles_in_grid = 50
+
         self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
-        self.max_num_particles_in_grid = 50
-        self.particles_in_grid_hashtable = ti.field(int, shape=(self.hashtable_size, self.max_num_particles_in_grid))
-        self.particles_in_grid = ti.field(
-            int, shape=(self.grid_num[0] * self.grid_num[1] * self.grid_num[2], self.max_num_particles_in_grid)
-        )
+        self.grid_particles_num = ti.field(int, shape=int(self.grid_num_1d))
+        self.particles_in_grid = ti.field(int, shape=(self.grid_num_1d, self.max_num_particles_in_grid))
 
     @ti.func
     def pos_to_index(self, pos):
