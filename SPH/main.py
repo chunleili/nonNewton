@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import reduce
 from abc import abstractmethod
 
-ti.init(arch=ti.gpu, device_memory_fraction=0.5)
+ti.init(arch=ti.gpu, device_memory_fraction=0.5, debug=True)
 
 sph_root_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -546,6 +546,7 @@ class NeighborhoodSearch:
         self.particle_max_num = meta.particle_max_num
         self.grid_size = meta.parm.support_radius
         self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
+        self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
 
         # Particle num of each grid
         self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
@@ -557,7 +558,7 @@ class NeighborhoodSearch:
 
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
-        self.max_num_neighbors = 50
+        self.max_num_neighbors = 100
         self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
@@ -570,7 +571,7 @@ class NeighborhoodSearch:
         return grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
 
     @ti.func
-    def get_flatten_grid_index(self, pos):
+    def pos_to_flatten_index(self, pos):
         return self.flatten_grid_index(self.pos_to_index(pos))
 
     @ti.func
@@ -586,7 +587,7 @@ class NeighborhoodSearch:
         for I in ti.grouped(self.grid_particles_num):
             self.grid_particles_num[I] = 0
         for I in ti.grouped(meta.pd.x):
-            grid_index = self.get_flatten_grid_index(meta.pd.x[I])
+            grid_index = self.pos_to_flatten_index(meta.pd.x[I])
             self.grid_ids[I] = grid_index
             ti.atomic_add(self.grid_particles_num[grid_index], 1)
         for I in ti.grouped(self.grid_particles_num):
@@ -661,9 +662,12 @@ class NeighborhoodSearch:
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
             grid_index = self.flatten_grid_index(center_cell + offset)
-            for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
-                if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-                    task(p_i, p_j, ret)
+            if 0 <= grid_index < self.grid_num_1d:
+                for p_j in range(
+                    self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
+                ):
+                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+                        task(p_i, p_j, ret)
 
     @ti.kernel
     def store_neighbors(self):
@@ -695,6 +699,7 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         self.particle_max_num = meta.particle_max_num
         self.grid_size = meta.parm.support_radius
         self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
+        self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
         self.hashtable_size = 2 * self.particle_max_num
 
         # Particle num of each grid
@@ -707,12 +712,15 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
 
         self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
 
-        self.max_num_neighbors = 50
+        self.max_num_neighbors = 100
         self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
-        self.max_num_particles_in_grid = 100
+        self.max_num_particles_in_grid = 50
         self.particles_in_grid_hashtable = ti.field(int, shape=(self.hashtable_size, self.max_num_particles_in_grid))
+        self.particles_in_grid = ti.field(
+            int, shape=(self.grid_num[0] * self.grid_num[1] * self.grid_num[2], self.max_num_particles_in_grid)
+        )
 
     @ti.func
     def pos_to_index(self, pos):
@@ -725,7 +733,7 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         )  # filling order: z, y, x
 
     @ti.func
-    def get_flatten_grid_index(self, pos):
+    def pos_to_flatten_index(self, pos):
         return self.flatten_grid_index(self.pos_to_index(pos))
 
     @ti.func
@@ -737,49 +745,36 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         return self.num_neighbors[i]
 
     @ti.kernel
-    def update_grid_id(self):
-        for I in ti.grouped(self.grid_particles_num):
-            self.grid_particles_num[I] = 0
+    def update_grid(self):
         for i in range(self.particle_max_num):
-            grid_index = self.get_flatten_grid_index(meta.pd.x[i])
-            self.grid_ids[i] = grid_index
-            ti.atomic_add(self.grid_particles_num[grid_index], 1)
-
-            grid_index_3d = self.pos_to_index(meta.pd.x[i])
-            grid_index_hash = hash_3d(grid_index_3d, self.hashtable_size)
-            k = self.grid_particles_num[grid_index] - 1
-            self.particles_in_grid_hashtable[grid_index_hash, k] = i
-
-        for I in ti.grouped(self.grid_particles_num):
-            self.grid_particles_num_temp[I] = self.grid_particles_num[I]
+            grid_index = self.pos_to_flatten_index(meta.pd.x[i])
+            k = ti.atomic_add(self.grid_particles_num[grid_index], 1)
+            self.particles_in_grid[grid_index, k] = i
 
     def run_search(self):
         self.num_neighbors.fill(0)
         self.neighbors.fill(-1)
-        self.particles_in_grid_hashtable.fill(-1)
+        self.particles_in_grid.fill(-1)
+        self.grid_particles_num.fill(0)
 
-        self.update_grid_id()
-        self.prefix_sum_executor.run(self.grid_particles_num)
-        self.counting_sort()
+        self.update_grid()
         self.store_neighbors()
-        ...
-
-    @ti.func
-    def get_particles_in_grid(self, grid_index_3d, k):
-        """Some particles not in this grid may occur as well, because we use a hashtable"""
-        hash_index = hash_3d(grid_index_3d, self.hashtable_size)
-        return self.particles_in_grid_hashtable[hash_index, k]
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+            cell_3d = center_cell + offset
             grid_index = self.flatten_grid_index(center_cell + offset)
-            # for p_j in range(self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]):
-            for k in range(self.grid_particles_num[grid_index]):
-                p_j = self.get_particles_in_grid(center_cell + offset, k)
-                if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-                    task(p_i, p_j, ret)
+            if self.is_in_grid(cell_3d):
+                for k in range(self.grid_particles_num[grid_index]):
+                    p_j = self.particles_in_grid[grid_index, k]
+                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+                        task(p_i, p_j, ret)
+
+    @ti.func
+    def is_in_grid(self, c):
+        return 0 <= c[0] < self.grid_num[0] and 0 <= c[1] < self.grid_num[1] and 0 <= c[2] < self.grid_num[2]
 
     @ti.kernel
     def store_neighbors(self):
