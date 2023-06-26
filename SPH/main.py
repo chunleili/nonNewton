@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import reduce
 from abc import abstractmethod
 
-ti.init(arch=ti.gpu, device_memory_fraction=0.5, debug=True)
+ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
 sph_root_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -694,7 +694,7 @@ class NeighborhoodSearch:
 
 
 @ti.data_oriented
-class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
+class NeighborhoodSearchSparse(NeighborhoodSearch):
     def __init__(self):
         self.particle_max_num = meta.particle_max_num
         self.grid_size = meta.parm.support_radius
@@ -706,8 +706,27 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
         self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
-        self.grid_particles_num = ti.field(int, shape=int(self.grid_num_1d))
-        self.particles_in_grid = ti.field(int, shape=(self.grid_num_1d, self.max_num_particles_in_grid))
+        # self.grid_particles_num = ti.field(int, shape=int(self.grid_num_1d))
+        # self.particles_in_grid = ti.field(int, shape=(self.grid_num_1d, self.max_num_particles_in_grid))
+        self.grid_particles_num = ti.field(int)
+        self.particles_in_grid = ti.field(int)
+        self.grid_snode = ti.root.bitmasked(ti.ijk, self.grid_num)
+        self.grid_snode.place(self.grid_particles_num)
+        self.grid_snode.bitmasked(ti.l, self.max_num_particles_in_grid).place(self.particles_in_grid)
+        ti.i
+
+    @ti.kernel
+    def grid_usage(self) -> ti.f32:
+        cnt = 0
+        for I in ti.grouped(self.grid_snode):
+            if ti.is_active(self.grid_snode, I):
+                cnt += 1
+        usage = cnt / (self.grid_num_1d)
+        print("Grid usage: ", usage)
+        return usage
+
+    def deactivate_grid(self):
+        self.grid_snode.deactivate_all()
 
     @ti.func
     def pos_to_index(self, pos):
@@ -734,7 +753,7 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
     @ti.kernel
     def update_grid(self):
         for i in range(self.particle_max_num):
-            grid_index = self.pos_to_flatten_index(meta.pd.x[i])
+            grid_index = self.pos_to_index(meta.pd.x[i])
             k = ti.atomic_add(self.grid_particles_num[grid_index], 1)
             self.particles_in_grid[grid_index, k] = i
 
@@ -746,14 +765,14 @@ class NeighborhoodSearchSpatialHashing(NeighborhoodSearch):
 
         self.update_grid()
         self.store_neighbors()
+        self.grid_usage()
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-            cell_3d = center_cell + offset
-            grid_index = self.flatten_grid_index(center_cell + offset)
-            if self.is_in_grid(cell_3d):
+            grid_index = center_cell + offset
+            if self.is_in_grid(grid_index):
                 for k in range(self.grid_particles_num[grid_index]):
                     p_j = self.particles_in_grid[grid_index, k]
                     if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
@@ -1703,7 +1722,7 @@ def initialize():
     initialize_particles(meta.pd)  # fill the taichi fields
 
     # meta.ns = NeighborhoodSearch()
-    meta.ns = NeighborhoodSearchSpatialHashing()
+    meta.ns = NeighborhoodSearchSparse()
 
     meta.rbs = []
     for phase in meta.phase_info.values():
