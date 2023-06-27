@@ -87,8 +87,8 @@ yg = np.kron(Iz, np.kron(ye, Ix))
 zg = np.kron(ze, np.kron(Iy, Ix))
 # yg: all nodes x position
 ## ==================
-xmin = [xa, ya, za]
-dx = [Lx, Ly, Lz]
+xmin = np.array([xa, ya, za])
+dx = np.array([Lx, Ly, Lz])
 nexyz = [nx, ny, ny]
 Xg = np.vstack((xg, yg, zg)).T  # all nodes position
 Vg = np.zeros((3 * Ng, 1))
@@ -186,7 +186,7 @@ start = time()
 while step < 200:
     step += 1
     # Map to grid
-    # [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
+    [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
     # [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
     # for i in range(len(NBCv)):
     #     if vnew[NBCv[i]] < 0:
