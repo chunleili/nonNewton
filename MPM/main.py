@@ -1,33 +1,13 @@
 import numpy as np
-from numpy import zeros, ones, kron, ones, arange
 from matplotlib import pyplot as plt
-from matplotlib.pyplot import (
-    figure,
-    plot,
-    title,
-    xlabel,
-    ylabel,
-    show,
-    legend,
-    quiver,
-    quiverkey,
-    gca,
-    grid,
-    xlim,
-    ylim,
-    subplot,
-    axis,
-    savefig,
-)
-from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import Axes3D
-from scipy.sparse import csr_matrix, hstack, vstack
 import scipy
 from time import time
 
 from InitialParticle import InitialParticle
 from FEMmatrix3D import FEMmatrix3D
 from natcoords import natcoords
+from P2G import P2G
 
 # problem inputs
 ## ====time stepping====
@@ -113,10 +93,10 @@ icon[4:8, :] = icon[0:4, :] + (nx + 1) * (ny + 1)
 # iniitalize the material point
 nep = np.array([8, 8, 8])
 [Np, xp, vp] = InitialParticle(nep, dx, icon, Xg, Ne)
-Tp = zeros((Np, 6))
-pp = zeros((Np, 1))
+Tp = np.zeros((Np, 6))
+pp = np.zeros((Np, 1))
 # %%===========================================
-figure(num="Initial mesh grid and mp")
+plt.figure(num="Initial mesh grid and mp")
 ax = plt.axes(projection="3d")
 for j in range(Ne):
     id = icon[:, j]
@@ -187,7 +167,11 @@ while step < 200:
     step += 1
     # Map to grid
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
-    # [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
-    # for i in range(len(NBCv)):
-    #     if vnew[NBCv[i]] < 0:
-    #         vnew[NBCv[i]] = VBC[NBCv[i]]
+    [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
+    for i in range(len(NBCv)):
+        if vnew[NBCv[i]] < 0:
+            vnew[NBCv[i]] = VBC[NBCv[i]]
+    v = vnew
+    T = Tnew
+    ...
+    # [Hg,f]=Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
