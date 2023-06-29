@@ -742,7 +742,7 @@ class NeighborhoodSearch:
 
 
 @ti.data_oriented
-class NeighborhoodSearchSparse(NeighborhoodSearch):
+class NeighborhoodSearchSparse:
     def __init__(self):
         self.particle_max_num = meta.particle_max_num
         self.grid_size = meta.parm.support_radius
