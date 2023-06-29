@@ -1120,8 +1120,16 @@ class RigidBodySolver(SPHBase):
         deep_copy(meta.pd.x_0, meta.pd.x)
 
     def substep(self):
+        self.ground_collision()
         self.solve_constraints(self.phase_id)
         # self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+
+    @ti.kernel
+    def ground_collision(self):
+        for p_i in ti.grouped(meta.pd.x):
+            if meta.pd.material[p_i] == SOLID:
+                if meta.pd.x[p_i][1] < meta.parm.padding:
+                    meta.pd.x[p_i][1] = meta.parm.padding
 
     @ti.func
     def compute_com(self, phase_id):
@@ -1771,8 +1779,8 @@ def initialize():
     meta.rbs = []
     for phase in meta.phase_info.values():
         if phase.solid_type == RIGID:
-            rb = RigidBody(phase.uid)
-            # rb = RigidBodySolver(phase.uid)
+            # rb = RigidBody(phase.uid)
+            rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
 
     meta.elastic_bodies = []
