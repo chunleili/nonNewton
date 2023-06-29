@@ -286,6 +286,8 @@ class RigidBody:
             self.q_inv,
             self.radius_vector,
         )
+        startnum = meta.phase_info[self.phase_id].startnum
+        range_copy(meta.pd.x, self.positions, startnum)
 
     @ti.kernel
     def shape_matching(
@@ -849,8 +851,6 @@ class SPHBase:
         for rb in meta.rbs:
             for i in range(meta.parm.coupling_interval):
                 rb.substep()
-                startnum = meta.phase_info[rb.phase_id].startnum
-                range_copy(meta.pd.x, rb.positions, startnum)
 
         self.advect()
 
