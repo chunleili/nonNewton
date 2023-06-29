@@ -754,14 +754,14 @@ class NeighborhoodSearchSparse:
         self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
         self.num_neighbors = ti.field(int, shape=self.particle_max_num)
 
-        # self.grid_particles_num = ti.field(int, shape=int(self.grid_num_1d))
-        # self.particles_in_grid = ti.field(int, shape=(self.grid_num_1d, self.max_num_particles_in_grid))
+        # self.grid_particles_num = ti.field(int, shape=(self.grid_num))
+        # self.particles_in_grid = ti.field(int, shape=(*self.grid_num, self.max_num_particles_in_grid))
+
         self.grid_particles_num = ti.field(int)
         self.particles_in_grid = ti.field(int)
         self.grid_snode = ti.root.bitmasked(ti.ijk, self.grid_num)
         self.grid_snode.place(self.grid_particles_num)
         self.grid_snode.bitmasked(ti.l, self.max_num_particles_in_grid).place(self.particles_in_grid)
-        ti.i
 
     @ti.kernel
     def grid_usage(self) -> ti.f32:
@@ -839,6 +839,19 @@ class NeighborhoodSearchSparse:
     def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
         self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
         self.num_neighbors[p_i] += 1
+
+    # @ti.kernel
+    # def store_neighbors(self):
+    #     for p_i in range(self.particle_max_num):
+    #         center_cell = self.pos_to_index(meta.pd.x[p_i])
+    #         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+    #             grid_index = center_cell + offset
+    #             if self.is_in_grid(grid_index):
+    #                 for k in range(self.grid_particles_num[grid_index]):
+    #                     p_j = self.particles_in_grid[grid_index, k]
+    #                     if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+    #                         nei_k = ti.atomic_add(self.num_neighbors[p_i], 1)
+    #                         self.neighbors[p_i, nei_k] = p_j
 
 
 # ---------------------------------------------------------------------------- #
@@ -1234,6 +1247,19 @@ mat6 = ti.types.matrix(6, 6, ti.f32)
 vec3 = ti.types.vector(3, ti.f32)
 
 
+@ti.func
+def compute_density_func(p_i: int) -> ti.f32:
+    den = meta.pd.m[p_i] * cubic_kernel(0.0)
+    num_neighbors = meta.ns.get_num_neighbors(p_i)
+    for k in range(num_neighbors):
+        p_j = meta.ns.get_neighbor(p_i, k)
+        x_i = meta.pd.x[p_i]
+        x_j = meta.pd.x[p_j]
+        den += meta.pd.m[p_j] * cubic_kernel((x_i - x_j).norm())
+    return den
+
+
+@ti.data_oriented
 class Elasticity:
     """elasticity(Becker2009)"""
 
@@ -1263,7 +1289,6 @@ class Elasticity:
 
     def initValues(self):
         meta.ns.run_search()
-        self.compute_densities()
         self.initValues_kernel()
 
     @ti.kernel
@@ -1281,8 +1306,8 @@ class Elasticity:
                 self.m_initialNeighbors[i, j] = meta.ns.get_neighbor(i, j)
 
             # // Compute volume
-            # density = compute_density(i, density)
-            self.m_restVolumes[i] = meta.pd.m[i] / meta.pd.density[i]
+            density = compute_density_func(i)
+            self.m_restVolumes[i] = meta.pd.m[i] / density
 
             # // mark all particles in the bounding box as fixed
             # determineFixedParticles()
