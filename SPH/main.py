@@ -1745,7 +1745,7 @@ def initialize():
 # ---------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
-    num_substeps = get_cfg("numberOfStepsPerRenderUpdate")
+    num_substeps = get_cfg("numberOfStepsPerRenderUpdate", 1)
 
     initialize()
 
