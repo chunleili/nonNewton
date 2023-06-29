@@ -119,6 +119,43 @@ def transform(points: np.ndarray, cfg: dict):
     return mesh.vertices
 
 
+def fill_tank(height):
+    domain_start = meta.parm.domain_start + meta.parm.padding
+    domain_end = meta.parm.domain_end - meta.parm.padding
+    mesh = trimesh.Trimesh(
+        vertices=np.array(
+            [
+                [domain_start[0], domain_start[1], domain_start[2]],
+                [domain_end[0], domain_start[1], domain_start[2]],
+                [domain_end[0], domain_start[1], domain_end[2]],
+                [domain_start[0], domain_start[1], domain_end[2]],
+                [domain_start[0], height, domain_start[2]],
+                [domain_end[0], height, domain_start[2]],
+                [domain_end[0], height, domain_end[2]],
+                [domain_start[0], height, domain_end[2]],
+            ]
+        ),
+        faces=np.array(
+            [
+                [0, 1, 2],
+                [0, 2, 3],
+                [4, 5, 6],
+                [4, 6, 7],
+                [0, 4, 5],
+                [0, 5, 1],
+                [1, 5, 6],
+                [1, 6, 2],
+                [2, 6, 7],
+                [2, 7, 3],
+                [3, 7, 4],
+                [3, 4, 0],
+            ]
+        ),
+    )
+    pts = points_from_volume(mesh, meta.parm.particle_radius * 2)
+    return pts
+
+
 # ---------------------------------------------------------------------------- #
 #                            other global functions                            #
 # ---------------------------------------------------------------------------- #
@@ -403,6 +440,11 @@ def load_particles():
     for cfg_i in cfgs:
         fluid_particle_num, cnt_fluid = parse_cfg(cfg_i, cnt_fluid, fluid_particle_num, 0, FLUID, STATIC, BLUE, 1)
 
+    cfgs = meta.config.config.get("FluidTanks", [])
+    for cfg_i in cfgs:
+        pos = fill_tank(cfg_i["height"])
+        fluid_particle_num, cnt_fluid = parse_cfg(cfg_i, cnt_fluid, fluid_particle_num, 0, FLUID, STATIC, BLUE, 1, pos)
+
     cfgs = get_solid_cfg()
     static_par_num = fluid_particle_num
     cnt_static = 0
@@ -432,8 +474,11 @@ def load_particles():
     return particle_max_num, fluid_particle_num
 
 
-def parse_cfg(cfg_i, cnt, startnum, phase_id_start, default_material, default_solid_type, default_color, is_dynamic):
-    pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+def parse_cfg(
+    cfg_i, cnt, startnum, phase_id_start, default_material, default_solid_type, default_color, is_dynamic, pos=None
+):
+    if pos is None:
+        pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
     pos = transform(pos, cfg_i)
     parnum = pos.shape[0]
     phase_id = cfg_i.get("id", cnt) + phase_id_start  # rigid solid phase_id starts from 2000
@@ -768,7 +813,7 @@ class NeighborhoodSearchSparse(NeighborhoodSearch):
 
         self.update_grid()
         self.store_neighbors()
-        self.grid_usage()
+        # self.grid_usage()
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):

@@ -22,7 +22,7 @@ def visualizer(pts_ti):
     background_color = BLACK
     particle_color = WHITE
 
-    box_anchors, box_lines_indices = make_doaminbox()
+    box_anchors, box_lines_indices = make_domainbox()
 
     cnt = 0
     meta.paused = True
@@ -62,5 +62,14 @@ def test_transform():
     visualizer(pts_ti)
 
 
+def test_fill_tank():
+    meta.parm = Parameter()
+    pos = fill_tank(1.0)
+    pos_ti = ti.Vector.field(3, dtype=ti.f32, shape=pos.shape[0])
+    pos_ti.from_numpy(pos)
+    visualizer(pos_ti)
+
+
 if __name__ == "__main__":
-    test_transform()
+    # test_transform()
+    test_fill_tank()

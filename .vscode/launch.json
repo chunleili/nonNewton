@@ -16,6 +16,14 @@
             "program": "MPM/main.py",
             "console": "integratedTerminal",
             "args": [ ]
-        }
+        },
+        {
+            "name": "调试SPH test",
+            "type": "python",
+            "request": "launch",
+            "program": "SPH/test.py",
+            "console": "integratedTerminal",
+            "args": [ ]
+        },
     ]
 }
