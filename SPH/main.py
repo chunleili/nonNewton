@@ -256,14 +256,14 @@ def hash_3d(grid_index_3d, hashtable_size: int):
 @ti.data_oriented
 class RigidBody:
     def __init__(self, extern_pos, phase_id):
-        init_pos = extern_pos.to_numpy().copy()
+        init_pos = extern_pos.copy()
 
         self.phase_id = phase_id
         self.num_particles = init_pos.shape[0]
-        self.dt = meta.parm.dt[None]
+        self.dt = meta.parm.solid_dt
         self.gravity = meta.parm.gravity
         self.mass_inv = 1.0
-        self.positions = extern_pos
+        self.positions = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.positions0 = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.velocities = ti.Vector.field(3, dtype=ti.f32, shape=self.num_particles)
         self.q_inv = ti.Matrix.field(n=3, m=3, dtype=float, shape=())
@@ -299,16 +299,16 @@ class RigidBody:
         q_inv: ti.template(),
         radius_vector: ti.template(),
     ):
-        # #  update vel and pos firtly
-        # gravity = self.gravity
-        # for i in range(num_particles):
-        #     positions0[i] = positions[i]
-        #     f = gravity
-        #     velocities[i] += mass_inv * f * dt
-        #     positions[i] += velocities[i] * dt
-        #     if positions[i].y < 0.0:
-        #         positions[i] = positions0[i]
-        #         positions[i].y = 0.0
+        #  update vel and pos firtly
+        gravity = self.gravity
+        for i in range(num_particles):
+            positions0[i] = positions[i]
+            f = gravity
+            velocities[i] += mass_inv * f * dt
+            positions[i] += velocities[i] * dt
+            if positions[i].y < 0.0:
+                positions[i] = positions0[i]
+                positions[i].y = 0.0
 
         # compute the new(matched shape) mass center
         c = ti.Vector([0.0, 0.0, 0.0])
@@ -327,7 +327,7 @@ class RigidBody:
         # update velocities and positions
         for i in range(num_particles):
             positions[i] = c + R @ radius_vector[i]
-            # velocities[i] = (positions[i] - positions0[i]) / dt
+            velocities[i] = (positions[i] - positions0[i]) / dt
 
     @ti.kernel
     def compute_radius_vector(self, num_particles: int, positions: ti.template(), radius_vector: ti.template()):
@@ -387,6 +387,7 @@ class Parameter:
         self.collision_coeff = get_cfg("collisionCoefficient", 0.5)
         self.padding = self.support_radius
         self.coupling_interval = get_cfg("couplingInterval", 1)
+        self.solid_dt = get_cfg("solidTimeStepSize", self.dt[None])
 
 
 # ---------------------------------------------------------------------------- #
@@ -848,10 +849,8 @@ class SPHBase:
         for rb in meta.rbs:
             for i in range(meta.parm.coupling_interval):
                 rb.substep()
-                self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
-
-                # oneway_coupling(rb)
-                # print("rb: ", rb.phase_id, "step: ", meta.step_num)
+                startnum = meta.phase_info[rb.phase_id].startnum
+                range_copy(meta.pd.x, rb.positions, startnum)
 
         self.advect()
 
@@ -1727,7 +1726,8 @@ def initialize():
     meta.rbs = []
     for phase in meta.phase_info.values():
         if phase.solid_type == RIGID:
-            rb = RigidBody(meta.pd.x, phase.uid)
+            init_pos = phase.pos
+            rb = RigidBody(init_pos, phase.uid)
             # rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
 
@@ -1745,7 +1745,7 @@ def initialize():
 # ---------------------------------------------------------------------------- #
 def main():
     parser = argparse.ArgumentParser(description="SPH Taichi")
-    substeps = get_cfg("numberOfStepsPerRenderUpdate")
+    num_substeps = get_cfg("numberOfStepsPerRenderUpdate")
 
     initialize()
 
@@ -1789,9 +1789,10 @@ def main():
                 solver.step()
                 meta.step_num += 1
         if not meta.paused:
-            solver.step()
-            meta.step_num += 1
-            meta.frame += 1
+            for i in range(num_substeps):
+                solver.step()
+                meta.step_num += 1
+                meta.frame += 1
 
         # print(camera.curr_position)
         # print(camera.curr_lookat)

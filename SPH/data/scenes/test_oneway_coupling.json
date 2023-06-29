@@ -7,9 +7,11 @@
 		"density0": 1000,
 		"simulationMethod": 4,
 		"gravitation": [0.0, -9.81, 0.0],
-		"timeStepSize": 1e-3,
+		"timeStepSize": 5e-4,
+		"solidTimeStepSize": 1e-4,
 		"boundaryHandlingMethod": 0,
-		"couplingInterval": 1
+		"couplingInterval": 1,
+		"numberOfStepsPerRenderUpdate": 5
 	},
 	"FluidParticles": [
 		{
