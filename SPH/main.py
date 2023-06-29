@@ -1329,21 +1329,20 @@ class Elasticity:
             #                                     Fluid                                    #
             # ---------------------------------------------------------------------------- #
             for j in range(numNeighbors):
-                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
-                neighborIndex0 = self.m_initialNeighbors[i0][j]
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0, j]]
+                neighborIndex0 = self.m_initialNeighbors[i0, j]
 
                 xj = meta.pd.x[neighborIndex]
                 xj0 = meta.pd.x_0[neighborIndex0]
                 xj_xi = xj - xi
                 xj_xi_0 = xj0 - xi0
-                Apq += meta.pd.m[0] * cubic_kernel(xj_xi_0) * (xj_xi * xj_xi_0.transpose())
+                Apq += meta.pd.m[i] * cubic_kernel(xj_xi_0.norm()) * (xj_xi.outer_product(xj_xi_0))
 
             # extract rotations
             R, _ = ti.polar_decompose(Apq)
             self.m_rotations[i] = R
 
     def computeStress(self):
-        mat6 = ti.types.matrix(6, 6, ti.f32)
         C = mat6(0.0)
         factor = self.m_youngsModulus / ((1.0 + self.m_poissonRatio) * (1.0 - 2.0 * self.m_poissonRatio))
         C[0, 0] = C[1, 1] = C[2, 2] = factor * (1.0 - self.m_poissonRatio)
@@ -1366,9 +1365,9 @@ class Elasticity:
             #                                     Fluid                                    #
             # ---------------------------------------------------------------------------- #
             for j in range(numNeighbors):
-                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0, j]]
                 # get initial neighbor index considering the current particle order
-                neighborIndex0 = self.m_initialNeighbors[i0][j]
+                neighborIndex0 = self.m_initialNeighbors[i0, j]
                 xj = meta.pd.x[neighborIndex]
                 xj0 = meta.pd.x_0[neighborIndex0]
 
@@ -1377,11 +1376,10 @@ class Elasticity:
 
                 uji = self.m_rotations[i].transpose() @ xj_xi - xj_xi_0
                 # subtract because kernel gradient is taken in direction of xji0 instead of xij0
-                nablaU -= (self.m_restVolumes[neighborIndex] * uji) * cubic_kernel_derivative(xj_xi_0).transpose()
+                nablaU -= (self.m_restVolumes[neighborIndex] * uji).outer_product(cubic_kernel_derivative(xj_xi_0))
             self.m_F[i] = nablaU + ti.math.eye(3)
 
             # compute Cauchy strain: epsilon = 0.5 (nabla u + nabla u^T)
-            vec6 = ti.types.vector(6, ti.f32)
             strain = vec6(0.0)
             strain[0] = nablaU[0, 0]  # \epsilon_{00}
             strain[1] = nablaU[1, 1]  # \epsilon_{11}
@@ -1415,9 +1413,9 @@ class Elasticity:
             #                                     Fluid                                    #
             # ---------------------------------------------------------------------------- #
             for j in range(numNeighbors):
-                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0][j]]
+                neighborIndex = self.m_initial_to_current_index[self.m_initialNeighbors[i0, j]]
                 # get initial neighbor index considering the current particle order
-                neighborIndex0 = self.m_initialNeighbors[i0][j]
+                neighborIndex0 = self.m_initialNeighbors[i0, j]
 
                 xj0 = meta.pd.x_0[neighborIndex0]
 
