@@ -292,8 +292,8 @@ def hash_3d(grid_index_3d, hashtable_size: int):
 # ---------------------------------------------------------------------------- #
 @ti.data_oriented
 class RigidBody:
-    def __init__(self, extern_pos, phase_id):
-        init_pos = extern_pos.copy()
+    def __init__(self, phase_id):
+        init_pos = meta.phase_info[phase_id].pos
 
         self.phase_id = phase_id
         self.num_particles = init_pos.shape[0]
@@ -1771,8 +1771,7 @@ def initialize():
     meta.rbs = []
     for phase in meta.phase_info.values():
         if phase.solid_type == RIGID:
-            init_pos = phase.pos
-            rb = RigidBody(init_pos, phase.uid)
+            rb = RigidBody(phase.uid)
             # rb = RigidBodySolver(phase.uid)
             meta.rbs.append(rb)
 
