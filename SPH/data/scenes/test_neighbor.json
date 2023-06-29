@@ -2,7 +2,7 @@
 	"Configuration":
 	{
         "domainStart": [0.0, 0.0, 0.0],
-        "domainEnd": [0.1, 0.1, 0.04],
+        "domainEnd": [0.1, 0.1, 0.1],
 		"particleRadius": 0.01,
 		"density0": 1000,
 		"simulationMethod": 4,

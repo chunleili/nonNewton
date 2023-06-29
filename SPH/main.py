@@ -832,8 +832,8 @@ class NeighborhoodSearchSparse:
 
     @ti.func
     def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
-        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
-        self.num_neighbors[p_i] += 1
+        k = ti.atomic_add(self.num_neighbors[p_i], 1)
+        self.neighbors[p_i, k] = p_j
 
     # @ti.kernel
     # def store_neighbors(self):
