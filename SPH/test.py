@@ -72,12 +72,13 @@ def test_fill_tank():
 
 def test_neighborhoodSearchSparse():
     meta.parm = Parameter()
-    pts = read_ply_particles(sph_root_path + "/data/models/test_deformable.ply")
+    pts = read_ply_particles(sph_root_path + "/data/models/test_neighbor.ply")
     meta.pd = ParticleData(pts.shape[0])
     meta.pd.x.from_numpy(pts)
     meta.particle_max_num = pts.shape[0]
     meta.ns = NeighborhoodSearchSparse()
     meta.ns.run_search()
+    np.savetxt("pts.txt", pts)
     np.savetxt("neighbors.txt", meta.ns.neighbors.to_numpy(), fmt="%d")
     np.savetxt("num_neighbors.txt", meta.ns.num_neighbors.to_numpy(), fmt="%d")
     np.savetxt("grid_particles_num.txt", meta.ns.grid_particles_num.to_numpy().reshape(-1, 1), fmt="%d")

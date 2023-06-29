@@ -745,9 +745,13 @@ class NeighborhoodSearch:
 class NeighborhoodSearchSparse:
     def __init__(self):
         self.particle_max_num = meta.particle_max_num
-        self.grid_size = meta.parm.support_radius
-        self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
+        self.support_radius = meta.parm.support_radius
+        self.domain_size = meta.parm.domain_size
+
+        self.grid_size = self.support_radius
+        self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
+        self.dim = 3
         self.max_num_neighbors = 100
         self.max_num_particles_in_grid = 50
 
@@ -781,16 +785,6 @@ class NeighborhoodSearchSparse:
         return (pos / self.grid_size).cast(int)  # 3d
 
     @ti.func
-    def flatten_grid_index(self, grid_index):
-        return (
-            grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
-        )  # filling order: z, y, x
-
-    @ti.func
-    def pos_to_flatten_index(self, pos):
-        return self.flatten_grid_index(self.pos_to_index(pos))
-
-    @ti.func
     def get_neighbor(self, i, j):
         return self.neighbors[i, j]
 
@@ -814,16 +808,17 @@ class NeighborhoodSearchSparse:
         self.update_grid()
         self.store_neighbors()
         # self.grid_usage()
+        ...
 
     @ti.func
     def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
         center_cell = self.pos_to_index(meta.pd.x[p_i])
-        for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
+        for offset in ti.grouped(ti.ndrange(*((-1, 2),) * self.dim)):
             grid_index = center_cell + offset
             if self.is_in_grid(grid_index):
                 for k in range(self.grid_particles_num[grid_index]):
                     p_j = self.particles_in_grid[grid_index, k]
-                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
+                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < self.support_radius:
                         task(p_i, p_j, ret)
 
     @ti.func
