@@ -1,0 +1,35 @@
+{
+	"Configuration":
+	{
+        "domainStart": [0.0, 0.0, 0.0],
+        "domainEnd": [2.0, 2.0, 2.0],
+		"particleRadius": 0.01,
+		"density0": 1000,
+		"simulationMethod": 4,
+		"gravitation": [0.0, -9.81, 0.0],
+		"timeStepSize": 0.004,
+		"boundaryHandlingMethod": 0
+	},
+	"FluidTanks": [
+		{
+			"height" : 0.5
+		}
+	],
+	"SolidParticles":[
+		{
+			"geometryFile": "./data/models/cube2.ply",
+			"solidType":"RIGID"
+		},
+        {
+			"geometryFile": "./data/models/pyramid.ply",
+			"solidType":"RIGID",
+            "translation": [0.0, 0.5, 0.0]
+
+		},
+        {
+			"geometryFile": "./data/models/torus.ply",
+			"solidType":"RIGID",
+            "translation": [0.5, 0.5, 0.0]
+		}
+	]
+}
