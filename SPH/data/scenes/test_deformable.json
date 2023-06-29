@@ -7,6 +7,7 @@
 		"density0": 1000,
 		"simulationMethod": 4,
 		"gravitation": [0,-9.81,0],
+		"domain_end":[2,2,2],
 		"cflMethod": 0,
 		"cflFactor": 1,
 		"cflMaxTimeStepSize": 0.005,
