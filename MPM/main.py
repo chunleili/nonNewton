@@ -8,6 +8,7 @@ from InitialParticle import InitialParticle
 from FEMmatrix3D import FEMmatrix3D
 from natcoords import natcoords
 from P2G import P2G
+from Hstar import Hstar
 
 # problem inputs
 ## ====time stepping====
@@ -173,5 +174,4 @@ while step < 200:
             vnew[NBCv[i]] = VBC[NBCv[i]]
     v = vnew
     T = Tnew
-    ...
-    # [Hg,f]=Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
+    [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
