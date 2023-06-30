@@ -9,6 +9,7 @@ from FEMmatrix3D import FEMmatrix3D
 from natcoords import natcoords
 from P2G import P2G
 from Hstar import Hstar
+from massA2 import massA2
 
 # problem inputs
 ## ====time stepping====
@@ -175,3 +176,4 @@ while step < 200:
     v = vnew
     T = Tnew
     [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
+    [Mf, A22d] = massA2(dx, Ng, Ne, icon, f, We, dt)
