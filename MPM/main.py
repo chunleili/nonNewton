@@ -194,4 +194,21 @@ while step < 200:
     zk = np.zeros((nk, nk))
     [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
     [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
-    ...
+
+    ## ==========Free Surface================
+    Gnx = dxm @ Nk
+    Gny = dym @ Nk
+    Gnz = dzm @ Nk
+    Gn = np.sqrt(Gnx * Gnx + Gny * Gny + Gnz * Gnz)
+    nnx = Gnx / (Gn)
+    nny = Gny / (Gn)
+    nnz = Gnz / (Gn)
+    NBS = np.where(Gn > 1e-8)[0]
+    nd = np.hstack([nnx, nny, nnz])
+    X10 = beta / Re * G1 @ vk
+    X20 = Tk
+    X30 = pk
+
+    ## ===========Solve ============
+    # [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3]= SolveAssemble(X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt);
+    # [X1, X2, X3]=SolveEuler(X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita);
