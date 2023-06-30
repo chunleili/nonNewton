@@ -10,6 +10,7 @@ from natcoords import natcoords
 from P2G import P2G
 from Hstar import Hstar
 from massA2 import massA2
+from full_scale_operators import full_scale_operators
 
 # problem inputs
 ## ====time stepping====
@@ -184,3 +185,12 @@ while step < 200:
     Phi_subset = Phi.tocsr()
     Phi_subset = Phi_subset[:, keep_columns]
     Phi = Phi_subset
+    dxm = Phi.T @ Gx @ Phi
+    dym = Phi.T @ Gy @ Phi
+    dzm = Phi.T @ Gz @ Phi
+    nk = dxm.shape[0]
+    Ck = Phi.T @ M @ Phi
+    zk = np.zeros((nk, nk))
+    [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
+    ...
+    # [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
