@@ -177,3 +177,10 @@ while step < 200:
     T = Tnew
     [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
     [Mf, A22d] = massA2(dx, Ng, Ne, icon, f, We, dt)
+    NBC = np.where(nn <= 0)[0]  # NBC: non particle nodes, NBS: free surface nodes
+    Phi = scipy.sparse.eye(Ng)
+    keep_columns = np.ones(Phi.shape[1], dtype=bool)
+    keep_columns[NBC] = False
+    Phi_subset = Phi.tocsr()
+    Phi_subset = Phi_subset[:, keep_columns]
+    Phi = Phi_subset
