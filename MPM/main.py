@@ -11,6 +11,7 @@ from P2G import P2G
 from Hstar import Hstar
 from massA2 import massA2
 from full_scale_operators import full_scale_operators
+from Matrix_reduction import Matrix_reduction
 
 # problem inputs
 ## ====time stepping====
@@ -192,5 +193,5 @@ while step < 200:
     Ck = Phi.T @ M @ Phi
     zk = np.zeros((nk, nk))
     [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
+    [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
     ...
-    # [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
