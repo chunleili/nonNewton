@@ -12,6 +12,7 @@ from Hstar import Hstar
 from massA2 import massA2
 from full_scale_operators import full_scale_operators
 from Matrix_reduction import Matrix_reduction
+from SolveAssemble import SolveAssemble
 
 # problem inputs
 ## ====time stepping====
@@ -210,5 +211,7 @@ while step < 200:
     X30 = pk
 
     ## ===========Solve ============
-    # [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3]= SolveAssemble(X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt);
+    [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3] = SolveAssemble(
+        X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt
+    )
     # [X1, X2, X3]=SolveEuler(X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita);

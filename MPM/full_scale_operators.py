@@ -28,6 +28,8 @@ def full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk):
     dMu = scipy.sparse.diags(Mu_inv)
     Md = Re / (2 * beta) * np.sum(Md, axis=1)
     Mt = np.sum(Mt, axis=1)
+    Mt = np.asarray(Mt).reshape(-1)
+    Mt = scipy.sparse.diags(Mt)
     Mf = Phi.T @ Mf @ Phi
     A22d = scipy.sparse.block_diag([Mf, Mf, Mf, Mf, Mf, Mf])
     return G1, D, G, Mu, Md, Mt, dMu, A22d
