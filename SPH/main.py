@@ -960,6 +960,7 @@ class SPHBase:
 
         animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
+        self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
 
     @abstractmethod
     def substep(self):
