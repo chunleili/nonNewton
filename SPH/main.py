@@ -1279,8 +1279,14 @@ class Elasticity:
         self.m_alpha = ti.field(dtype=ti.f32, shape=())
         self.m_alpha[None] = 0.0
 
+        self.fill_rotations()
         self.initValues()
         ...
+
+    @ti.kernel
+    def fill_rotations(self):
+        for i in range(self.numParticles):
+            self.m_rotations[i] = ti.Matrix.identity(ti.f32, 3)
 
     def initValues(self):
         meta.ns.run_search()
