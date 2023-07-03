@@ -415,7 +415,7 @@ class Parameter:
         self.particle_radius = get_cfg("particleRadius", 0.01)
         self.particle_diameter = 2 * self.particle_radius
         self.support_radius = self.particle_radius * 4.0  # support radius
-        self.m_V0 = 0.8 * self.particle_diameter**self.dim
+        self.volume0 = 0.8 * self.particle_diameter**self.dim
         self.density0 = get_cfg("density0", 1000.0)  # reference density
         self.gravity = ti.Vector(get_cfg("gravitation", [0.0, -9.8, 0.0]))
         self.viscosity = 0.01  # viscosity
@@ -517,7 +517,7 @@ class ParticleData:
         self.x_0 = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.v = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.acceleration = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.m_V = ti.field(dtype=float, shape=self.particle_max_num)
+        self.volume = ti.field(dtype=float, shape=self.particle_max_num)
         self.m = ti.field(dtype=float, shape=self.particle_max_num)
         self.density = ti.field(dtype=float, shape=self.particle_max_num)
         self.pressure = ti.field(dtype=float, shape=self.particle_max_num)
@@ -536,7 +536,7 @@ class ParticleData:
         self.x_0_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.v_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
         self.acceleration_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.m_V_buffer = ti.field(dtype=float, shape=self.particle_max_num)
+        self.volume_buffer = ti.field(dtype=float, shape=self.particle_max_num)
         self.m_buffer = ti.field(dtype=float, shape=self.particle_max_num)
         self.density_buffer = ti.field(dtype=float, shape=self.particle_max_num)
         self.pressure_buffer = ti.field(dtype=float, shape=self.particle_max_num)
@@ -566,8 +566,8 @@ def initialize_particles(pd: ParticleData):
 
     pd.x.from_numpy(all_par)
     pd.x_0.from_numpy(all_par)
-    pd.m_V.fill(meta.parm.m_V0)
-    pd.m.fill(meta.parm.m_V0 * 1000.0)
+    pd.volume.fill(meta.parm.volume0)
+    pd.m.fill(meta.parm.volume0 * 1000.0)
     pd.density.fill(meta.parm.density0)
     pd.pressure.fill(0.0)
     pd.material.fill(FLUID)
@@ -661,7 +661,7 @@ class NeighborhoodSearch:
             meta.pd.x_buffer[new_index] = meta.pd.x[I]
             meta.pd.v_buffer[new_index] = meta.pd.v[I]
             meta.pd.acceleration_buffer[new_index] = meta.pd.acceleration[I]
-            meta.pd.m_V_buffer[new_index] = meta.pd.m_V[I]
+            meta.pd.volume_buffer[new_index] = meta.pd.volume[I]
             meta.pd.m_buffer[new_index] = meta.pd.m[I]
             meta.pd.density_buffer[new_index] = meta.pd.density[I]
             meta.pd.pressure_buffer[new_index] = meta.pd.pressure[I]
@@ -683,7 +683,7 @@ class NeighborhoodSearch:
             meta.pd.x[I] = meta.pd.x_buffer[I]
             meta.pd.v[I] = meta.pd.v_buffer[I]
             meta.pd.acceleration[I] = meta.pd.acceleration_buffer[I]
-            meta.pd.m_V[I] = meta.pd.m_V_buffer[I]
+            meta.pd.volume[I] = meta.pd.volume_buffer[I]
             meta.pd.m[I] = meta.pd.m_buffer[I]
             meta.pd.density[I] = meta.pd.density_buffer[I]
             meta.pd.pressure[I] = meta.pd.pressure_buffer[I]
@@ -1025,19 +1025,19 @@ class SPHBase:
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
             x_j = meta.pd.x[p_j]
-            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+            ret += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             x_j = meta.pd.x[p_j]
-            ret += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+            ret += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
 
     @ti.kernel
     def compute_densities(self):
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.material[p_i] != FLUID:
                 continue
-            meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
+            meta.pd.density[p_i] = meta.pd.volume[p_i] * self.cubic_kernel(0.0)
             den = 0.0
             meta.ns.for_all_neighbors(p_i, self.compute_densities_task, den)
             meta.pd.density[p_i] += den
@@ -1049,7 +1049,7 @@ class SPHBase:
     #     for p_i in ti.grouped(meta.pd.x):
     #         if meta.pd.material[p_i] != FLUID:
     #             continue
-    #         meta.pd.density[p_i] = meta.pd.m_V[p_i] * self.cubic_kernel(0.0)
+    #         meta.pd.density[p_i] = meta.pd.volume[p_i] * self.cubic_kernel(0.0)
     #         den = 0.0
     #         num_neighbors = meta.ns.get_num_neighbors(p_i)
     #         for k in range(num_neighbors):
@@ -1058,12 +1058,12 @@ class SPHBase:
     #             if meta.pd.material[p_j] == FLUID:
     #                 # Fluid neighbors
     #                 x_j = meta.pd.x[p_j]
-    #                 den += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #                 den += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
     #             elif meta.pd.material[p_j] == SOLID:
     #                 # Boundary neighbors
     #                 ## Akinci2012
     #                 x_j = meta.pd.x[p_j]
-    #                 den += meta.pd.m_V[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #                 den += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
     #         meta.pd.density[p_i] += den
     #         meta.pd.density[p_i] *= self.density_0
 
@@ -1089,7 +1089,7 @@ class SPHBase:
                 continue
             delta = self.cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
-            meta.pd.m_V[p_i] = (
+            meta.pd.volume[p_i] = (
                 1.0 / delta * 3.0
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
@@ -1105,7 +1105,7 @@ class SPHBase:
                 continue
             delta = self.cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
-            meta.pd.m_V[p_i] = (
+            meta.pd.volume[p_i] = (
                 1.0 / delta * 3.0
             )  # TODO: the 3.0 here is a coefficient for missing particles by trail and error... need to figure out how to determine it sophisticatedly
 
@@ -1198,7 +1198,7 @@ class RigidBodySolver(SPHBase):
         cm = ti.Vector([0.0, 0.0, 0.0])
         for p_i in range(meta.particle_max_num):
             if is_dynamic_rigid_body(p_i) and meta.pd.phase_id[p_i] == phase_id:
-                mass = meta.parm.m_V0 * meta.pd.density[p_i]
+                mass = meta.parm.volume0 * meta.pd.density[p_i]
                 cm += mass * meta.pd.x[p_i]
                 sum_m += mass
         cm /= sum_m
@@ -1218,7 +1218,7 @@ class RigidBodySolver(SPHBase):
             if is_dynamic_rigid_body(p_i) and meta.pd.phase_id[p_i] == phase_id:
                 q = meta.pd.x_0[p_i] - self.rigid_rest_cm[None]
                 p = meta.pd.x[p_i] - cm
-                A += meta.parm.m_V0 * meta.pd.density[p_i] * p.outer_product(q)
+                A += meta.parm.volume0 * meta.pd.density[p_i] * p.outer_product(q)
 
         R, S = ti.polar_decompose(A)
 
@@ -1511,7 +1511,7 @@ class DFSPHSolver(SPHBase):
                 f_v = (
                     d
                     * meta.parm.boundary_viscosity
-                    * (self.density_0 * meta.pd.m_V[p_j] / (meta.pd.density[p_i]))
+                    * (self.density_0 * meta.pd.volume[p_j] / (meta.pd.density[p_i]))
                     * v_xy
                     / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
                     * self.cubic_kernel_derivative(r)
@@ -1564,14 +1564,14 @@ class DFSPHSolver(SPHBase):
     def compute_DFSPH_factor_task(self, p_i, p_j, ret: ti.template()):
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+            grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
             ret[3] += grad_p_j.norm_sqr()  # sum_grad_p_k
             for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+            grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
             for i in ti.static(range(3)):  # grad_p_i
                 ret[i] -= grad_p_j[i]
 
@@ -1603,11 +1603,11 @@ class DFSPHSolver(SPHBase):
         v_j = meta.pd.v[p_j]
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
+            ret.density_adv += meta.pd.volume[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            ret.density_adv += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
+            ret.density_adv += meta.pd.volume[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
 
         # Compute the number of neighbors
         ret.num_neighbors += 1
@@ -1628,11 +1628,11 @@ class DFSPHSolver(SPHBase):
         v_j = meta.pd.v[p_j]
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
-            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
+            ret += meta.pd.volume[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
-            ret += meta.pd.m_V[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
+            ret += meta.pd.volume[p_j] * (v_i - v_j).dot(self.grad_w_ij(p_i, p_j))
 
     @ti.kernel
     def compute_density_error(self, offset: float) -> float:
@@ -1711,13 +1711,13 @@ class DFSPHSolver(SPHBase):
                 ret.k_i + self.density_0 / self.density_0 * k_j
             )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+                grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
                 ret.dv -= self.dt[None] * k_sum * grad_p_j
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(ret.k_i) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+                grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
                 vel_change = -self.dt[None] * 1.0 * ret.k_i * grad_p_j
                 ret.dv += vel_change
                 if is_dynamic_rigid_body(p_j):
@@ -1788,14 +1788,14 @@ class DFSPHSolver(SPHBase):
                 k_i + self.density_0 / self.density_0 * k_j
             )  # TODO: make the neighbor density0 different for multiphase fluid
             if ti.abs(k_sum) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+                grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
                 # Directly update velocities instead of storing pressure accelerations
                 meta.pd.v[p_i] -= self.dt[None] * k_sum * grad_p_j  # ki, kj already contain inverse density
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             if ti.abs(k_i) > self.m_eps:
-                grad_p_j = -meta.pd.m_V[p_j] * self.grad_w_ij(p_i, p_j)
+                grad_p_j = -meta.pd.volume[p_j] * self.grad_w_ij(p_i, p_j)
 
                 # Directly update velocities instead of storing pressure accelerations
                 vel_change = -self.dt[None] * 1.0 * k_i * grad_p_j  # kj already contains inverse density
