@@ -1883,6 +1883,7 @@ def main():
     solver = build_solver()
     solver.initialize()
 
+    meta.step_num = 0
     if get_cfg("noGUI"):
         for _ in range(get_cfg("maxStep")):
             solver.step()
