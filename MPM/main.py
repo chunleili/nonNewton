@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import scipy
 from time import time
+import os
 
 from InitialParticle import InitialParticle
 from FEMmatrix3D import FEMmatrix3D
@@ -19,6 +20,14 @@ from maptopointsPC import maptopointsPC
 
 def main():
     # problem inputs
+    ## ====plotting and saving====
+    save_results = True
+    enable_plot = True
+    num_steps = 200
+    if save_results:
+        if not os.path.exists("results"):
+            os.makedirs("results")
+    program_start_time = time()
     ## ====time stepping====
     dt = 1e-4
     # CFL * min(lx,ly)/1;
@@ -104,7 +113,8 @@ def main():
     Tp = np.zeros((Np, 6))
     pp = np.zeros((Np, 1))
     ## =========plot initial================
-    plot_init(Xg, icon, Ne, plot=False)
+    if enable_plot:
+        plot_init(Xg, icon, Ne, plot=False)
     ## === boundary setup======================
     ntop = np.where(Xg[:, 2] >= 1)[0]
     nbot = np.where(Xg[:, 2] <= 0)[0]
@@ -148,9 +158,10 @@ def main():
     p = np.zeros((Np, 1))
     vp[2, :] = v0
     step = 0
-    starttime = time()
-    while step < 200:
-        step += 1
+    loop_start_time = time()
+    print(f"Initialization done.\nInitialzation time used {loop_start_time-program_start_time:.2f}s")
+    xp_saved = []
+    while step < num_steps:
         step_start_time = time()
         # Map to grid
         [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
@@ -218,9 +229,16 @@ def main():
         ## ====Plot======
         step_end_time = time()
         print(f"step: {step}, step time used: {(step_end_time - step_start_time):.2f}s")
-        plot_step(xp)
-    endtime = time()
-    print("total time used: ", endtime - starttime)
+        if enable_plot:
+            plot_step(xp)
+        if save_results:
+            # xp_saved.append(xp)
+            np.savetxt(f"results/xp_{step}.txt", xp)
+        step += 1
+
+    program_end_time = time()
+    print("loop time used: ", program_end_time - loop_start_time)
+    print("total time used: ", program_end_time - program_start_time)
 
 
 def plot_step(xp, plot=True):
