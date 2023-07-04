@@ -104,8 +104,7 @@ def main():
     Tp = np.zeros((Np, 6))
     pp = np.zeros((Np, 1))
     ## =========plot initial================
-    plot_init(Xg, icon, Ne, True)
-
+    plot_init(Xg, icon, Ne, plot=False)
     ## === boundary setup======================
     ntop = np.where(Xg[:, 2] >= 1)[0]
     nbot = np.where(Xg[:, 2] <= 0)[0]
@@ -152,7 +151,7 @@ def main():
     starttime = time()
     while step < 200:
         step += 1
-        print("step: ", step)
+        step_start_time = time()
         # Map to grid
         [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
         [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
@@ -217,6 +216,8 @@ def main():
         [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
         v = vnew
         ## ====Plot======
+        step_end_time = time()
+        print(f"step: {step}, step time used: {(step_end_time - step_start_time):.2f}s")
         plot_step(xp)
     endtime = time()
     print("total time used: ", endtime - starttime)
