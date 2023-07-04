@@ -102,17 +102,16 @@ nep = np.array([8, 8, 8])
 [Np, xp, vp] = InitialParticle(nep, dx, icon, Xg, Ne)
 Tp = np.zeros((Np, 6))
 pp = np.zeros((Np, 1))
-# %%===========================================
+## ===========================================
 plt.figure(num="Initial mesh grid and mp")
 ax = plt.axes(projection="3d")
 for j in range(Ne):
     id = icon[:, j]
     id = np.append(id, id[0])
-    # ax.scatter(Xg[id,0], Xg[id,1], Xg[id,2], c='r', s=1)
-    plt.plot(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], "r.", linewidth=1)
-# plt.show()
+    ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
+plt.show()
 
-# %% === boundary setup======================
+## === boundary setup======================
 ntop = np.where(Xg[:, 2] >= 1)[0]
 nbot = np.where(Xg[:, 2] <= 0)[0]
 nright = np.where(Xg[:, 0] >= 1)[0]
@@ -122,7 +121,7 @@ nback = np.where(Xg[:, 1] >= 1)[0]
 
 NBCv = nbot + 2 * Ng
 
-# %% =============Assemble Matrix============
+## =============Assemble Matrix============
 [M, K, Gx, Gy, Gz] = FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz)
 
 zer = np.zeros(shape=Gx.shape)
@@ -142,23 +141,11 @@ l1 = scipy.sparse.hstack([Gx, zer, zer, Gy, Gz, zer])
 l2 = scipy.sparse.hstack([zer, Gy, zer, Gz, zer, Gx])
 l3 = scipy.sparse.hstack([zer, zer, Gz, zer, Gx, Gy])
 G30 = scipy.sparse.vstack([l1, l2, l3])
-# Divergence of stress
 
 
 # mass matrix
-Mu0 = scipy.sparse.vstack(
-    [scipy.sparse.hstack([M, zer, zer]), scipy.sparse.hstack([zer, M, zer]), scipy.sparse.hstack([zer, zer, M])]
-)
-Mt0 = scipy.sparse.vstack(
-    [
-        scipy.sparse.hstack([M, zer, zer, zer, zer, zer]),
-        scipy.sparse.hstack([zer, M, zer, zer, zer, zer]),
-        scipy.sparse.hstack([zer, zer, M, zer, zer, zer]),
-        scipy.sparse.hstack([zer, zer, zer, M, zer, zer]),
-        scipy.sparse.hstack([zer, zer, zer, zer, M, zer]),
-        scipy.sparse.hstack([zer, zer, zer, zer, zer, M]),
-    ]
-)
+Mu0 = scipy.sparse.block_diag([M, M, M])
+Mt0 = scipy.sparse.block_diag([M, M, M, M, M, M])
 Mu = np.sum(Mu0, axis=1)
 Mu = np.squeeze(np.asarray(Mu))
 inv_Mu = 1.0 / Mu[:]
