@@ -103,14 +103,8 @@ def main():
     [Np, xp, vp] = InitialParticle(nep, dx, icon, Xg, Ne)
     Tp = np.zeros((Np, 6))
     pp = np.zeros((Np, 1))
-    ## ===========================================
-    plt.figure(num="Initial mesh grid and mp")
-    ax = plt.axes(projection="3d")
-    for j in range(Ne):
-        id = icon[:, j]
-        id = np.append(id, id[0])
-        ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
-    # plt.show()
+    ## =========plot initial================
+    plot_init(Xg, icon, Ne, True)
 
     ## === boundary setup======================
     ntop = np.where(Xg[:, 2] >= 1)[0]
@@ -158,6 +152,7 @@ def main():
     starttime = time()
     while step < 200:
         step += 1
+        print("step: ", step)
         # Map to grid
         [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
         [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
@@ -222,21 +217,39 @@ def main():
         [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
         v = vnew
         ## ====Plot======
-        plt.ion()
-        ax = plt.axes(projection="3d")
-        ax.scatter(xp[0, :], xp[1, :], xp[2, :], c="b")
-        ax.set_xlim(0.2, 0.8)
-        ax.set_ylim(0.2, 0.8)
-        ax.set_zlim(0, 0.3)
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
-        ax.set_zlabel("Z")
-        ax.set_box_aspect([2, 2, 1])
-        plt.show()
-        plt.pause(3)
-        plt.clf()
+        plot_step(xp)
     endtime = time()
     print("total time used: ", endtime - starttime)
+
+
+def plot_step(xp, plot=True):
+    if not plot:
+        return
+    plt.ion()
+    ax = plt.axes(projection="3d")
+    ax.scatter(xp[0, :], xp[1, :], xp[2, :], c="b")
+    ax.set_xlim(0.2, 0.8)
+    ax.set_ylim(0.2, 0.8)
+    ax.set_zlim(0, 0.3)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    ax.set_box_aspect([2, 2, 1])
+    plt.show()
+    plt.pause(1)
+    plt.clf()
+
+
+def plot_init(Xg, icon, Ne, plot=True):
+    if not plot:
+        return
+    plt.figure(num="Initial mesh grid and mp")
+    ax = plt.axes(projection="3d")
+    for j in range(Ne):
+        id = icon[:, j]
+        id = np.append(id, id[0])
+        ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
+    plt.show()
 
 
 if __name__ == "__main__":
