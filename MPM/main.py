@@ -235,3 +235,13 @@ while step < 200:
     ## ===== Grids to Particles=============
     [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
     v = vnew
+    ## ====Plot======
+    ax = plt.axes(projection="3d")
+    ax.scatter(xp[0, :], xp[1, :], xp[2, :], c="b")
+    ax.set_xlim(0.2, 0.8)
+    ax.set_ylim(0.2, 0.8)
+    ax.set_zlim(0, 0.3)
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_zlabel("Z")
+    plt.show()
