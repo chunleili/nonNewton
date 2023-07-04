@@ -237,7 +237,7 @@ def plot_step(xp, plot=True):
     ax.set_zlabel("Z")
     ax.set_box_aspect([2, 2, 1])
     plt.show()
-    plt.pause(1)
+    plt.pause(0.01)
     plt.clf()
 
 
