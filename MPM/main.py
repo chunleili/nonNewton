@@ -13,6 +13,7 @@ from massA2 import massA2
 from full_scale_operators import full_scale_operators
 from Matrix_reduction import Matrix_reduction
 from SolveAssemble import SolveAssemble
+from SolveEuler import SolveEuler
 
 # problem inputs
 ## ====time stepping====
@@ -208,10 +209,20 @@ while step < 200:
     nd = np.hstack([nnx, nny, nnz])
     X10 = beta / Re * G1 @ vk
     X20 = Tk
-    X30 = pk
+    X30 = pk.flatten()
 
     ## ===========Solve ============
     [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3] = SolveAssemble(
         X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt
     )
-    # [X1, X2, X3]=SolveEuler(X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita);
+    [X1, X2, X3] = SolveEuler(
+        X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita
+    )
+    ## ==========Results Reterive====
+    zn = np.zeros((Ng, nk))
+    Tg = scipy.sparse.block_diag([Phi, Phi, Phi, Phi, Phi, Phi]) @ X2
+    p = Phi @ X3
+    dV = dMu @ (beta / Re * D @ X1 + D @ X2 - G @ X3) * dt
+    deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
+    vtilda = vnew + deltV
+    vnew = vtilda
