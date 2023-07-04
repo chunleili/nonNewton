@@ -14,6 +14,7 @@ from full_scale_operators import full_scale_operators
 from Matrix_reduction import Matrix_reduction
 from SolveAssemble import SolveAssemble
 from SolveEuler import SolveEuler
+from maptopointsPC import maptopointsPC
 
 # problem inputs
 ## ====time stepping====
@@ -226,3 +227,11 @@ while step < 200:
     deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
     vtilda = vnew + deltV
     vnew = vtilda
+
+    ## ==========Boundary Condition==========
+    for i in range(len(NBCv)):
+        if vnew[NBCv[i]] < 0:
+            vnew[NBCv[i]] = VBC[NBCv[i]]
+    ## ===== Grids to Particles=============
+    [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
+    v = vnew
