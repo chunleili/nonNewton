@@ -110,7 +110,7 @@ def main():
         id = icon[:, j]
         id = np.append(id, id[0])
         ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
-    plt.show()
+    # plt.show()
 
     ## === boundary setup======================
     ntop = np.where(Xg[:, 2] >= 1)[0]
@@ -222,6 +222,7 @@ def main():
         [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
         v = vnew
         ## ====Plot======
+        plt.ion()
         ax = plt.axes(projection="3d")
         ax.scatter(xp[0, :], xp[1, :], xp[2, :], c="b")
         ax.set_xlim(0.2, 0.8)
@@ -232,6 +233,8 @@ def main():
         ax.set_zlabel("Z")
         ax.set_box_aspect([2, 2, 1])
         plt.show()
+        plt.pause(3)
+        plt.clf()
     endtime = time()
     print("total time used: ", endtime - starttime)
 
