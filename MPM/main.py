@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import scipy
 from time import time
 
@@ -229,6 +230,7 @@ def main():
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
+        ax.set_box_aspect([2, 2, 1])
         plt.show()
     endtime = time()
     print("total time used: ", endtime - starttime)
