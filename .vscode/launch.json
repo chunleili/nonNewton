@@ -13,7 +13,7 @@
             "name": "调试MPM",
             "type": "python",
             "request": "launch",
-            "program": "MPM/main.py",
+            "program": "MPM/taichi/main.py",
             "console": "integratedTerminal",
             "args": [ ]
         },

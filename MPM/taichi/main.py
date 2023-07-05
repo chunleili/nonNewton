@@ -5,6 +5,11 @@ import scipy
 from time import time
 import os
 import argparse
+import taichi as ti
+
+
+ti.init(arch=ti.cpu)
+
 
 from InitialParticle import InitialParticle
 from FEMmatrix3D import FEMmatrix3D
