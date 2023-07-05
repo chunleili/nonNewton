@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-num_frames = 20
+num_frames = 200
 
 # 读取数据
 xps = []

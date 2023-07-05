@@ -244,6 +244,7 @@ def main():
 
     program_end_time = time()
     print("loop time used: ", program_end_time - loop_start_time)
+    print("average time per step: ", (program_end_time - loop_start_time) / num_steps, "s")
     print("total time used: ", program_end_time - program_start_time)
 
 
