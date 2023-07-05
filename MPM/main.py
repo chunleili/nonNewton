@@ -4,6 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import scipy
 from time import time
 import os
+import argparse
 
 from InitialParticle import InitialParticle
 from FEMmatrix3D import FEMmatrix3D
@@ -21,9 +22,14 @@ from maptopointsPC import maptopointsPC
 def main():
     # problem inputs
     ## ====plotting and saving====
-    save_results = True
-    enable_plot = True
-    num_steps = 200
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--save_results", type=int, default=1)
+    parser.add_argument("--enable_plot", type=int, default=1)
+    parser.add_argument("--num_steps", type=int, default=200)
+    args = parser.parse_args()
+    save_results = args.save_results
+    enable_plot = args.enable_plot
+    num_steps = args.num_steps
     if save_results:
         if not os.path.exists("results"):
             os.makedirs("results")
