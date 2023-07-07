@@ -530,25 +530,6 @@ class ParticleData:
             self.dfsph_factor = ti.field(dtype=float, shape=self.particle_max_num)
             self.density_adv = ti.field(dtype=float, shape=self.particle_max_num)
 
-        # Buffer for sort
-        self.phase_id_buffer = ti.field(dtype=int, shape=self.particle_max_num)
-        self.x_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.x_0_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.v_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.acceleration_buffer = ti.Vector.field(self.dim, dtype=float, shape=self.particle_max_num)
-        self.volume_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-        self.m_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-        self.density_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-        self.pressure_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-        self.material_buffer = ti.field(dtype=int, shape=self.particle_max_num)
-        self.color_buffer = ti.Vector.field(3, dtype=ti.f32, shape=self.particle_max_num)
-        self.is_dynamic_buffer = ti.field(dtype=int, shape=self.particle_max_num)
-        self.particle_id_buffer = ti.field(dtype=int, shape=self.particle_max_num)
-
-        if get_cfg("simulationMethod") == 4:
-            self.dfsph_factor_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-            self.density_adv_buffer = ti.field(dtype=float, shape=self.particle_max_num)
-
 
 # ---------------------------------------------------------------------------- #
 #                             initialize particles                             #
@@ -589,183 +570,33 @@ def initialize_particles(pd: ParticleData):
 #                              NeighborhoodSearch                              #
 # ---------------------------------------------------------------------------- #
 @ti.data_oriented
-class NeighborhoodSearch:
-    def __init__(self):
-        self.particle_max_num = meta.particle_max_num
-        self.grid_size = meta.parm.support_radius
-        self.grid_num = np.ceil(meta.parm.domain_size / self.grid_size).astype(int)
-        self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
-
-        # Particle num of each grid
-        self.grid_particles_num = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-        self.grid_particles_num_temp = ti.field(int, shape=int(self.grid_num[0] * self.grid_num[1] * self.grid_num[2]))
-        # Grid id for each particle
-        self.grid_ids = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_buffer = ti.field(int, shape=self.particle_max_num)
-        self.grid_ids_new = ti.field(int, shape=self.particle_max_num)
-
-        self.prefix_sum_executor = ti.algorithms.PrefixSumExecutor(self.grid_particles_num.shape[0])
-
-        self.max_num_neighbors = 100
-        self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
-        self.num_neighbors = ti.field(int, shape=self.particle_max_num)
-
-    @ti.func
-    def pos_to_index(self, pos):
-        return (pos / self.grid_size).cast(int)
-
-    @ti.func
-    def flatten_grid_index(self, grid_index):
-        return grid_index[0] * self.grid_num[1] * self.grid_num[2] + grid_index[1] * self.grid_num[2] + grid_index[2]
-
-    @ti.func
-    def pos_to_flatten_index(self, pos):
-        return self.flatten_grid_index(self.pos_to_index(pos))
-
-    @ti.func
-    def get_neighbor(self, i, j):
-        return self.neighbors[i, j]
-
-    @ti.func
-    def get_num_neighbors(self, i):
-        return self.num_neighbors[i]
-
-    @ti.kernel
-    def update_grid_id(self):
-        for I in ti.grouped(self.grid_particles_num):
-            self.grid_particles_num[I] = 0
-        for I in ti.grouped(meta.pd.x):
-            grid_index = self.pos_to_flatten_index(meta.pd.x[I])
-            self.grid_ids[I] = grid_index
-            ti.atomic_add(self.grid_particles_num[grid_index], 1)
-        for I in ti.grouped(self.grid_particles_num):
-            self.grid_particles_num_temp[I] = self.grid_particles_num[I]
-
-    @ti.kernel
-    def counting_sort(self):
-        # FIXME: make it the actual particle num
-        for i in range(self.particle_max_num):
-            I = self.particle_max_num - 1 - i
-            base_offset = 0
-            if self.grid_ids[I] - 1 >= 0:
-                base_offset = self.grid_particles_num[self.grid_ids[I] - 1]
-            self.grid_ids_new[I] = ti.atomic_sub(self.grid_particles_num_temp[self.grid_ids[I]], 1) - 1 + base_offset
-
-        for I in ti.grouped(self.grid_ids):
-            # if meta.pd.material[I] != FLUID:
-            #     continue
-            new_index = self.grid_ids_new[I]
-            self.grid_ids_buffer[new_index] = self.grid_ids[I]
-            meta.pd.phase_id_buffer[new_index] = meta.pd.phase_id[I]
-            meta.pd.x_0_buffer[new_index] = meta.pd.x_0[I]
-            meta.pd.x_buffer[new_index] = meta.pd.x[I]
-            meta.pd.v_buffer[new_index] = meta.pd.v[I]
-            meta.pd.acceleration_buffer[new_index] = meta.pd.acceleration[I]
-            meta.pd.volume_buffer[new_index] = meta.pd.volume[I]
-            meta.pd.m_buffer[new_index] = meta.pd.m[I]
-            meta.pd.density_buffer[new_index] = meta.pd.density[I]
-            meta.pd.pressure_buffer[new_index] = meta.pd.pressure[I]
-            meta.pd.material_buffer[new_index] = meta.pd.material[I]
-            meta.pd.color_buffer[new_index] = meta.pd.color[I]
-            meta.pd.is_dynamic_buffer[new_index] = meta.pd.is_dynamic[I]
-            meta.pd.particle_id_buffer[new_index] = meta.pd.particle_id[I]
-
-            if ti.static(meta.parm.simulation_method == 4):
-                meta.pd.dfsph_factor_buffer[new_index] = meta.pd.dfsph_factor[I]
-                meta.pd.density_adv_buffer[new_index] = meta.pd.density_adv[I]
-
-        for I in ti.grouped(meta.pd.x):
-            # if meta.pd.material[I] != FLUID:
-            #     continue
-            self.grid_ids[I] = self.grid_ids_buffer[I]
-            meta.pd.phase_id[I] = meta.pd.phase_id_buffer[I]
-            meta.pd.x_0[I] = meta.pd.x_0_buffer[I]
-            meta.pd.x[I] = meta.pd.x_buffer[I]
-            meta.pd.v[I] = meta.pd.v_buffer[I]
-            meta.pd.acceleration[I] = meta.pd.acceleration_buffer[I]
-            meta.pd.volume[I] = meta.pd.volume_buffer[I]
-            meta.pd.m[I] = meta.pd.m_buffer[I]
-            meta.pd.density[I] = meta.pd.density_buffer[I]
-            meta.pd.pressure[I] = meta.pd.pressure_buffer[I]
-            meta.pd.material[I] = meta.pd.material_buffer[I]
-            meta.pd.color[I] = meta.pd.color_buffer[I]
-            meta.pd.is_dynamic[I] = meta.pd.is_dynamic_buffer[I]
-            meta.pd.particle_id[I] = meta.pd.particle_id_buffer[I]
-
-            if ti.static(meta.parm.simulation_method == 4):
-                meta.pd.dfsph_factor[I] = meta.pd.dfsph_factor_buffer[I]
-                meta.pd.density_adv[I] = meta.pd.density_adv_buffer[I]
-
-    def run_search(self):
-        self.update_grid_id()
-        self.prefix_sum_executor.run(self.grid_particles_num)
-        self.counting_sort()
-
-        self.num_neighbors.fill(0)
-        self.neighbors.fill(-1)
-        self.store_neighbors()
-
-    @ti.func
-    def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
-        center_cell = self.pos_to_index(meta.pd.x[p_i])
-        for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-            grid_index = self.flatten_grid_index(center_cell + offset)
-            if 0 <= grid_index < self.grid_num_1d:
-                for p_j in range(
-                    self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
-                ):
-                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-                        task(p_i, p_j, ret)
-
-    @ti.kernel
-    def store_neighbors(self):
-        for p_i in ti.grouped(meta.pd.x):
-            self.for_all_neighbors(p_i, self.store_neighbors_task, None)
-
-    @ti.func
-    def store_neighbors_task(self, p_i, p_j, ret):
-        self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
-        self.num_neighbors[p_i] += 1
-
-    # @ti.kernel
-    # def store_neighbors(self):
-    #     for p_i in range(self.particle_max_num):
-    #         center_cell = self.pos_to_index(meta.pd.x[p_i])
-    #         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-    #             grid_index = self.flatten_grid_index(center_cell + offset)
-    #             for p_j in range(
-    #                 self.grid_particles_num[ti.max(0, grid_index - 1)], self.grid_particles_num[grid_index]
-    #             ):
-    #                 if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-    #                     self.neighbors[p_i, self.num_neighbors[p_i]] = p_j
-    #                     self.num_neighbors[p_i] += 1
-
-
-@ti.data_oriented
 class NeighborhoodSearchSparse:
-    def __init__(self):
-        self.particle_max_num = meta.particle_max_num
-        self.support_radius = meta.parm.support_radius
-        self.domain_size = meta.parm.domain_size
+    def __init__(self, positions, num_particle, support_radius, domain_size, use_sparse_grid=False):
+        self.num_particle = num_particle
+        self.support_radius = support_radius
+        self.domain_size = domain_size
+
+        self.positions = positions
 
         self.grid_size = self.support_radius
         self.grid_num = np.ceil(self.domain_size / self.grid_size).astype(int)
         self.grid_num_1d = self.grid_num[0] * self.grid_num[1] * self.grid_num[2]
         self.dim = 3
-        self.max_num_neighbors = 100
+        self.max_num_neighbors = 60
         self.max_num_particles_in_grid = 50
 
-        self.neighbors = ti.field(int, shape=(self.particle_max_num, self.max_num_neighbors))
-        self.num_neighbors = ti.field(int, shape=self.particle_max_num)
+        self.neighbors = ti.field(int, shape=(self.num_particle, self.max_num_neighbors))
+        self.num_neighbors = ti.field(int, shape=self.num_particle)
 
-        # self.grid_particles_num = ti.field(int, shape=(self.grid_num))
-        # self.particles_in_grid = ti.field(int, shape=(*self.grid_num, self.max_num_particles_in_grid))
-
-        self.grid_particles_num = ti.field(int)
-        self.particles_in_grid = ti.field(int)
-        self.grid_snode = ti.root.bitmasked(ti.ijk, self.grid_num)
-        self.grid_snode.place(self.grid_particles_num)
-        self.grid_snode.bitmasked(ti.l, self.max_num_particles_in_grid).place(self.particles_in_grid)
+        if not use_sparse_grid:
+            self.grid_particles_num = ti.field(int, shape=(self.grid_num))
+            self.particles_in_grid = ti.field(int, shape=(*self.grid_num, self.max_num_particles_in_grid))
+        else:
+            self.particles_in_grid = ti.field(int)
+            self.grid_particles_num = ti.field(int)
+            self.grid_snode = ti.root.bitmasked(ti.ijk, self.grid_num)
+            self.grid_snode.place(self.grid_particles_num)
+            self.grid_snode.bitmasked(ti.l, self.max_num_particles_in_grid).place(self.particles_in_grid)
 
     @ti.kernel
     def grid_usage(self) -> ti.f32:
@@ -774,7 +605,6 @@ class NeighborhoodSearchSparse:
             if ti.is_active(self.grid_snode, I):
                 cnt += 1
         usage = cnt / (self.grid_num_1d)
-        print("Grid usage: ", usage)
         return usage
 
     def deactivate_grid(self):
@@ -782,20 +612,12 @@ class NeighborhoodSearchSparse:
 
     @ti.func
     def pos_to_index(self, pos):
-        return (pos / self.grid_size).cast(int)  # 3d
-
-    @ti.func
-    def get_neighbor(self, i, j):
-        return self.neighbors[i, j]
-
-    @ti.func
-    def get_num_neighbors(self, i):
-        return self.num_neighbors[i]
+        return (pos / self.grid_size).cast(int)
 
     @ti.kernel
     def update_grid(self):
-        for i in range(self.particle_max_num):
-            grid_index = self.pos_to_index(meta.pd.x[i])
+        for i in range(self.num_particle):
+            grid_index = self.pos_to_index(self.positions[i])
             k = ti.atomic_add(self.grid_particles_num[grid_index], 1)
             self.particles_in_grid[grid_index, k] = i
 
@@ -807,19 +629,7 @@ class NeighborhoodSearchSparse:
 
         self.update_grid()
         self.store_neighbors()
-        # self.grid_usage()
-        ...
-
-    @ti.func
-    def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
-        center_cell = self.pos_to_index(meta.pd.x[p_i])
-        for offset in ti.grouped(ti.ndrange(*((-1, 2),) * self.dim)):
-            grid_index = center_cell + offset
-            if self.is_in_grid(grid_index):
-                for k in range(self.grid_particles_num[grid_index]):
-                    p_j = self.particles_in_grid[grid_index, k]
-                    if p_i[0] != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < self.support_radius:
-                        task(p_i, p_j, ret)
+        # print("Grid usage: ", self.grid_usage())
 
     @ti.func
     def is_in_grid(self, c):
@@ -827,26 +637,22 @@ class NeighborhoodSearchSparse:
 
     @ti.kernel
     def store_neighbors(self):
-        for p_i in ti.grouped(meta.pd.x):
-            self.for_all_neighbors(p_i, self.store_neighbors_task, None)
+        for p_i in range(self.num_particle):
+            center_cell = self.pos_to_index(self.positions[p_i])
+            for offset in ti.grouped(ti.ndrange(*((-1, 2),) * self.dim)):
+                grid_index = center_cell + offset
+                if self.is_in_grid(grid_index):
+                    for k in range(self.grid_particles_num[grid_index]):
+                        p_j = self.particles_in_grid[grid_index, k]
+                        if p_i != p_j and (self.positions[p_i] - self.positions[p_j]).norm() < self.support_radius:
+                            kk = ti.atomic_add(self.num_neighbors[p_i], 1)
+                            self.neighbors[p_i, kk] = p_j
 
     @ti.func
-    def store_neighbors_task(self, p_i, p_j, ret: ti.template()):
-        k = ti.atomic_add(self.num_neighbors[p_i], 1)
-        self.neighbors[p_i, k] = p_j
-
-    # @ti.kernel
-    # def store_neighbors(self):
-    #     for p_i in range(self.particle_max_num):
-    #         center_cell = self.pos_to_index(meta.pd.x[p_i])
-    #         for offset in ti.grouped(ti.ndrange(*((-1, 2),) * meta.parm.dim)):
-    #             grid_index = center_cell + offset
-    #             if self.is_in_grid(grid_index):
-    #                 for k in range(self.grid_particles_num[grid_index]):
-    #                     p_j = self.particles_in_grid[grid_index, k]
-    #                     if p_i != p_j and (meta.pd.x[p_i] - meta.pd.x[p_j]).norm() < meta.parm.support_radius:
-    #                         nei_k = ti.atomic_add(self.num_neighbors[p_i], 1)
-    #                         self.neighbors[p_i, nei_k] = p_j
+    def for_all_neighbors(self, p_i, task: ti.template(), ret: ti.template()):
+        for k in range(self.num_neighbors[p_i]):
+            p_j = self.neighbors[p_i, k]
+            task(p_i, p_j, ret)
 
 
 # ---------------------------------------------------------------------------- #
@@ -1853,7 +1659,9 @@ def initialize():
     initialize_particles(meta.pd)  # fill the taichi fields
 
     # meta.ns = NeighborhoodSearch()
-    meta.ns = NeighborhoodSearchSparse()
+    meta.ns = NeighborhoodSearchSparse(
+        meta.pd.x, meta.pd.particle_max_num, meta.parm.support_radius, meta.parm.domain_size, use_sparse_grid=True
+    )
 
     meta.rbs = []
     for phase in meta.phase_info.values():
