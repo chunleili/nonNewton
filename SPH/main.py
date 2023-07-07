@@ -935,34 +935,24 @@ class SPHBase:
         self.compute_moving_boundary_volume()
 
     @ti.func
-    def cubic_kernel(self, r_norm):
-        res = cubic_kernel(r_norm)
-        return res
-
-    @ti.func
-    def cubic_kernel_derivative(self, r):
-        res = cubic_kernel_derivative(r)
-        return res
-
-    @ti.func
     def compute_densities_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.pd.x[p_i]
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
             x_j = meta.pd.x[p_j]
-            ret += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
+            ret += meta.pd.volume[p_j] * cubic_kernel((x_i - x_j).norm())
         elif meta.pd.material[p_j] == SOLID:
             # Boundary neighbors
             ## Akinci2012
             x_j = meta.pd.x[p_j]
-            ret += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
+            ret += meta.pd.volume[p_j] * cubic_kernel((x_i - x_j).norm())
 
     @ti.kernel
     def compute_densities(self):
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.material[p_i] != FLUID:
                 continue
-            meta.pd.density[p_i] = meta.pd.volume[p_i] * self.cubic_kernel(0.0)
+            meta.pd.density[p_i] = meta.pd.volume[p_i] * cubic_kernel(0.0)
             den = 0.0
             meta.ns.for_all_neighbors(p_i, self.compute_densities_task, den)
             meta.pd.density[p_i] += den
@@ -974,7 +964,7 @@ class SPHBase:
     #     for p_i in ti.grouped(meta.pd.x):
     #         if meta.pd.material[p_i] != FLUID:
     #             continue
-    #         meta.pd.density[p_i] = meta.pd.volume[p_i] * self.cubic_kernel(0.0)
+    #         meta.pd.density[p_i] = meta.pd.volume[p_i] * cubic_kernel(0.0)
     #         den = 0.0
     #         num_neighbors = meta.ns.get_num_neighbors(p_i)
     #         for k in range(num_neighbors):
@@ -983,12 +973,12 @@ class SPHBase:
     #             if meta.pd.material[p_j] == FLUID:
     #                 # Fluid neighbors
     #                 x_j = meta.pd.x[p_j]
-    #                 den += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #                 den += meta.pd.volume[p_j] * cubic_kernel((x_i - x_j).norm())
     #             elif meta.pd.material[p_j] == SOLID:
     #                 # Boundary neighbors
     #                 ## Akinci2012
     #                 x_j = meta.pd.x[p_j]
-    #                 den += meta.pd.volume[p_j] * self.cubic_kernel((x_i - x_j).norm())
+    #                 den += meta.pd.volume[p_j] * cubic_kernel((x_i - x_j).norm())
     #         meta.pd.density[p_i] += den
     #         meta.pd.density[p_i] *= self.density_0
 
@@ -1003,7 +993,7 @@ class SPHBase:
             * (meta.pd.m[p_j] / (meta.pd.density[p_j]))
             * v_xy
             / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
-            * self.cubic_kernel_derivative(r)
+            * cubic_kernel_derivative(r)
         )
         return res
 
@@ -1012,7 +1002,7 @@ class SPHBase:
         for p_i in ti.grouped(meta.pd.x):
             if not is_static_rigid_body(p_i):
                 continue
-            delta = self.cubic_kernel(0.0)
+            delta = cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
             meta.pd.volume[p_i] = (
                 1.0 / delta * 3.0
@@ -1021,14 +1011,14 @@ class SPHBase:
     @ti.func
     def compute_boundary_volume_task(self, p_i, p_j, delta: ti.template()):
         if meta.pd.material[p_j] == SOLID:
-            delta += self.cubic_kernel((meta.pd.x[p_i] - meta.pd.x[p_j]).norm())
+            delta += cubic_kernel((meta.pd.x[p_i] - meta.pd.x[p_j]).norm())
 
     @ti.kernel
     def compute_moving_boundary_volume(self):
         for p_i in ti.grouped(meta.pd.x):
             if not is_dynamic_rigid_body(p_i):
                 continue
-            delta = self.cubic_kernel(0.0)
+            delta = cubic_kernel(0.0)
             meta.ns.for_all_neighbors(p_i, self.compute_boundary_volume_task, delta)
             meta.pd.volume[p_i] = (
                 1.0 / delta * 3.0
@@ -1081,7 +1071,7 @@ class SPHBase:
 
     @ti.func
     def grad_w_ij(self, p_i: int, p_j: int):
-        return self.cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
+        return cubic_kernel_derivative(meta.pd.x[p_i] - meta.pd.x[p_j])
 
     @ti.kernel
     def advect(self):
@@ -1436,14 +1426,14 @@ class DFSPHSolver(SPHBase):
             r = x_i - x_j
             r2 = r.dot(r)
             if r2 > diameter2:
-                ret -= self.surface_tension / meta.pd.m[p_i] * meta.pd.m[p_j] * r * self.cubic_kernel(r.norm())
+                ret -= self.surface_tension / meta.pd.m[p_i] * meta.pd.m[p_j] * r * cubic_kernel(r.norm())
             else:
                 ret -= (
                     self.surface_tension
                     / meta.pd.m[p_i]
                     * meta.pd.m[p_j]
                     * r
-                    * self.cubic_kernel(ti.Vector([meta.parm.particle_diameter, 0.0, 0.0]).norm())
+                    * cubic_kernel(ti.Vector([meta.parm.particle_diameter, 0.0, 0.0]).norm())
                 )
 
     @ti.func
@@ -1463,7 +1453,7 @@ class DFSPHSolver(SPHBase):
                 * (meta.pd.m[p_j] / (meta.pd.density[p_j]))
                 * v_xy
                 / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
-                * self.cubic_kernel_derivative(r)
+                * cubic_kernel_derivative(r)
             )
             ret += f_v
         elif meta.pd.material[p_j] == SOLID:
@@ -1476,7 +1466,7 @@ class DFSPHSolver(SPHBase):
                     * (self.density_0 * meta.pd.volume[p_j] / (meta.pd.density[p_i]))
                     * v_xy
                     / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
-                    * self.cubic_kernel_derivative(r)
+                    * cubic_kernel_derivative(r)
                 )
                 ret += f_v
                 if is_dynamic_rigid_body(p_j):
