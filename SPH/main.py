@@ -895,7 +895,7 @@ class SPHBase:
         meta.ns.run_search()
         self.compute_moving_boundary_volume()
 
-        assign(self.gravity, meta.pd.acceleration)
+        self.clear_accelerations()
         if meta.fluid_particle_num > 0:
             self.substep()
 
@@ -913,6 +913,9 @@ class SPHBase:
         animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+
+    def clear_accelerations(self):
+        assign(self.gravity, meta.pd.acceleration)
 
     @abstractmethod
     def substep(self):
@@ -1759,6 +1762,7 @@ class DFSPHSolver(SPHBase):
         self.compute_DFSPH_factor()
         if self.enable_divergence_solver:
             self.divergence_solve()
+        self.clear_accelerations()
         self.compute_non_pressure_forces()
         self.predict_velocity()
         self.pressure_solve()
