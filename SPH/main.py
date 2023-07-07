@@ -1379,6 +1379,7 @@ class DFSPHSolver(SPHBase):
         self.m_eps = 1e-5
         self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
         self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
+        self.num_particles = meta.particle_max_num
 
         self.use_surfaceTensionModel = False
         self.use_nonNewtonianModel = True
@@ -1387,7 +1388,7 @@ class DFSPHSolver(SPHBase):
         self.use_elasticityModel = False
 
         if self.use_nonNewtonianModel:
-            self.nonNewtonianModel = NonNewton(meta.particle_max_num)
+            self.nonNewtonianModel = NonNewton(self.num_particles)
 
     def substep(self):
         self.compute_densities()
@@ -1474,7 +1475,7 @@ class DFSPHSolver(SPHBase):
 
     @ti.kernel
     def compute_non_pressure_forces_kernel(self):
-        for p_i in ti.grouped(meta.pd.x):
+        for p_i in range(self.num_particles):
             if meta.pd.material[p_i] == FLUID:
                 d_v = ti.math.vec3(0.0)
                 meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
