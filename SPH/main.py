@@ -593,7 +593,6 @@ class Parameter:
         self.volume0 = 0.8 * self.particle_diameter**self.dim
         self.density0 = get_cfg("density0", 1000.0)  # reference density
         self.gravity = ti.Vector(get_cfg("gravitation", [0.0, -9.8, 0.0]))
-        self.viscosity = 0.01  # viscosity
         self.boundary_viscosity = get_cfg("boundaryViscosity", 0.0)
         self.dt = ti.field(float, shape=())
         self.dt[None] = get_cfg("timeStepSize", 1e-4)
@@ -602,6 +601,10 @@ class Parameter:
         self.padding = self.support_radius
         self.coupling_interval = get_cfg("couplingInterval", 1)
         self.solid_dt = get_cfg("solidTimeStepSize", self.dt[None])
+
+        # changeable parameters during simulation
+        self.viscosity = ti.field(float, shape=())
+        self.viscosity[None] = get_cfg("viscosity", 0.01)
 
 
 # ---------------------------------------------------------------------------- #
@@ -886,7 +889,6 @@ def cubic_kernel_derivative(r):
 class SPHBase:
     def __init__(self):
         self.gravity = meta.parm.gravity
-        self.viscosity = meta.parm.viscosity
         self.density_0 = meta.parm.density0
         self.dt = meta.parm.dt
 
@@ -981,21 +983,6 @@ class SPHBase:
     #                 den += meta.pd.volume[p_j] * cubic_kernel((x_i - x_j).norm())
     #         meta.pd.density[p_i] += den
     #         meta.pd.density[p_i] *= self.density_0
-
-    @ti.func
-    def viscosity_force(self, p_i, p_j, r):
-        # Compute the viscosity force contribution
-        v_xy = (meta.pd.v[p_i] - meta.pd.v[p_j]).dot(r)
-        res = (
-            2
-            * (meta.parm.dim + 2)
-            * self.viscosity
-            * (meta.pd.m[p_j] / (meta.pd.density[p_j]))
-            * v_xy
-            / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
-            * cubic_kernel_derivative(r)
-        )
-        return res
 
     @ti.kernel
     def compute_static_boundary_volume(self):
@@ -1408,7 +1395,6 @@ class SurfaceTension:
 class ViscosityModel:
     def __init__(self, num_particles):
         self.num_particles = num_particles
-        self.viscosity = 0.01
         self.density_0 = meta.parm.density0
 
     def step(self):
@@ -1427,7 +1413,7 @@ class ViscosityModel:
         if meta.pd.material[p_j] == FLUID:
             f_v = (
                 d
-                * self.viscosity
+                * meta.parm.viscosity[None]
                 * (meta.pd.m[p_j] / (meta.pd.density[p_j]))
                 * v_xy
                 / (r.norm() ** 2 + 0.01 * meta.parm.support_radius**2)
@@ -1848,7 +1834,7 @@ def set_widgets(gui):
     with gui.sub_window("Widgets", 0, 0, 0.3, 0.5) as w:
         gui.text("step number: " + str(meta.step_num))
         if hasattr(meta.parm, "viscosity"):
-            meta.parm.viscosity = gui.slider_float("viscosity", meta.parm.viscosity, 0, 100)
+            meta.parm.viscosity[None] = gui.slider_float("viscosity", meta.parm.viscosity[None], 0, 1)
         meta.paused = gui.checkbox("pause(SPACE)", meta.paused)
 
 
@@ -1884,7 +1870,7 @@ def main():
     box_anchors, box_lines_indices = make_domainbox()
 
     num_substeps = get_cfg("numberOfStepsPerRenderUpdate", 1)
-    show_widget = get_cfg("showWidget", False)
+    show_widget = get_cfg("showWidget", True)
     meta.paused = False
     meta.step_num = 0
     meta.frame = 0
