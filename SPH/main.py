@@ -1365,55 +1365,22 @@ class Elasticity:
             meta.pd.acceleration[i] += fi / meta.pd.m[i]
 
 
-# ---------------------------------------------------------------------------- #
-#                                     DFSPH                                    #
-# ---------------------------------------------------------------------------- #
-class DFSPHSolver(SPHBase):
-    def __init__(self):
-        super().__init__()
-
+@ti.data_oriented
+class SurfaceTension:
+    def __init__(self, num_particles):
+        self.num_particles = num_particles
         self.surface_tension = 0.01
-        self.enable_divergence_solver = True
-        self.m_max_iterations_v = get_cfg("maxIterationsV", 100)  # max iter for divergence solve
-        self.m_max_iterations = get_cfg("maxIterations", 100)  # max iter for pressure solve
-        self.m_eps = 1e-5
-        self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
-        self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
-        self.num_particles = meta.particle_max_num
 
-        self.use_surfaceTensionModel = True
-        self.use_nonNewtonianModel = True
-        self.use_viscosityModel = True
-        self.use_dragForceModel = False
-        self.use_elasticityModel = False
+    def step(self):
+        self.compute_surface_tension_kernel()
 
-        if self.use_nonNewtonianModel:
-            self.nonNewtonianModel = NonNewton(self.num_particles)
-
-    def substep(self):
-        self.compute_densities()
-        print(f"max density: {meta.pd.density.to_numpy().max()}")
-        self.compute_DFSPH_factor()
-        if self.enable_divergence_solver:
-            self.divergence_solve()
-        self.clear_accelerations()
-        self.compute_non_pressure_forces()
-        self.non_pressure_advect()
-        self.pressure_solve()
-
-    def compute_non_pressure_forces(self):
-        if self.use_surfaceTensionModel:
-            # self.surfaceTensionModel.step()
-            self.compute_surface_tension_kernel()
-        if self.use_nonNewtonianModel:
-            self.nonNewtonianModel.step()
-        if self.use_viscosityModel:
-            # self.viscosityModel.step()
-            self.compute_viscosity_force_kernel()
-        if self.use_dragForceModel:
-            self.dragForceModel.step()
-        if self.use_elasticityModel:
-            self.elasticityModel.step()
+    @ti.kernel
+    def compute_surface_tension_kernel(self):
+        for p_i in range(self.num_particles):
+            if meta.pd.material[p_i] == FLUID:
+                d_v = ti.math.vec3(0.0)
+                meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
+                meta.pd.acceleration[p_i] += d_v
 
     @ti.func
     def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
@@ -1435,6 +1402,61 @@ class DFSPHSolver(SPHBase):
                     * r
                     * cubic_kernel(ti.Vector([meta.parm.particle_diameter, 0.0, 0.0]).norm())
                 )
+
+
+# ---------------------------------------------------------------------------- #
+#                                     DFSPH                                    #
+# ---------------------------------------------------------------------------- #
+class DFSPHSolver(SPHBase):
+    def __init__(self):
+        super().__init__()
+
+        self.enable_divergence_solver = True
+        self.m_max_iterations_v = get_cfg("maxIterationsV", 100)  # max iter for divergence solve
+        self.m_max_iterations = get_cfg("maxIterations", 100)  # max iter for pressure solve
+        self.m_eps = 1e-5
+        self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
+        self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
+        self.num_particles = meta.particle_max_num
+
+        self.use_surfaceTensionModel = True
+        self.use_nonNewtonianModel = True
+        self.use_viscosityModel = True
+        self.use_dragForceModel = False
+        self.use_elasticityModel = False
+
+        if self.use_surfaceTensionModel:
+            self.surfaceTensionModel = SurfaceTension(self.num_particles)
+        if self.use_nonNewtonianModel:
+            self.nonNewtonianModel = NonNewton(self.num_particles)
+        # if self.use_viscosityModel:
+        #     self.viscosityModel = Viscosity(self.num_particles)
+        # if self.use_dragForceModel:
+        #     self.dragForceModel = DragForce(self.num_particles)
+
+    def substep(self):
+        self.compute_densities()
+        print(f"max density: {meta.pd.density.to_numpy().max()}")
+        self.compute_DFSPH_factor()
+        if self.enable_divergence_solver:
+            self.divergence_solve()
+        self.clear_accelerations()
+        self.compute_non_pressure_forces()
+        self.non_pressure_advect()
+        self.pressure_solve()
+
+    def compute_non_pressure_forces(self):
+        if self.use_surfaceTensionModel:
+            self.surfaceTensionModel.step()
+        if self.use_nonNewtonianModel:
+            self.nonNewtonianModel.step()
+        if self.use_viscosityModel:
+            # self.viscosityModel.step()
+            self.compute_viscosity_force_kernel()
+        if self.use_dragForceModel:
+            self.dragForceModel.step()
+        if self.use_elasticityModel:
+            self.elasticityModel.step()
 
     @ti.func
     def compute_viscosity_force_task(self, p_i, p_j, ret: ti.template()):
@@ -1471,14 +1493,6 @@ class DFSPHSolver(SPHBase):
                 ret += f_v
                 if is_dynamic_rigid_body(p_j):
                     meta.pd.acceleration[p_j] += -f_v
-
-    @ti.kernel
-    def compute_surface_tension_kernel(self):
-        for p_i in range(self.num_particles):
-            if meta.pd.material[p_i] == FLUID:
-                d_v = ti.math.vec3(0.0)
-                meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
-                meta.pd.acceleration[p_i] += d_v
 
     @ti.kernel
     def compute_viscosity_force_kernel(self):
