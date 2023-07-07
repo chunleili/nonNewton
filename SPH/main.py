@@ -1475,17 +1475,11 @@ class DFSPHSolver(SPHBase):
     @ti.kernel
     def compute_non_pressure_forces_kernel(self):
         for p_i in ti.grouped(meta.pd.x):
-            if is_static_rigid_body(p_i):
-                meta.pd.acceleration[p_i].fill(0.0)
-                continue
-            ############## Body force ###############
-            # Add body force
-            d_v = self.gravity
-            meta.pd.acceleration[p_i] = d_v
             if meta.pd.material[p_i] == FLUID:
+                d_v = ti.math.vec3(0.0)
                 meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
                 meta.ns.for_all_neighbors(p_i, self.compute_viscosity_force_task, d_v)
-                meta.pd.acceleration[p_i] = d_v
+                meta.pd.acceleration[p_i] += d_v
 
     @ti.kernel
     def compute_DFSPH_factor(self):
