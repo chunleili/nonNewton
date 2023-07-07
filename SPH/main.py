@@ -1844,9 +1844,16 @@ def initialize():
 # ---------------------------------------------------------------------------- #
 #                                     main                                     #
 # ---------------------------------------------------------------------------- #
+def set_widgets(gui):
+    with gui.sub_window("Widgets", 0, 0, 0.3, 0.5) as w:
+        gui.text("step number: " + str(meta.step_num))
+        if hasattr(meta.parm, "viscosity"):
+            meta.parm.viscosity = gui.slider_float("viscosity", meta.parm.viscosity, 0, 100)
+        meta.paused = gui.checkbox("pause(SPACE)", meta.paused)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="SPH Taichi")
-    num_substeps = get_cfg("numberOfStepsPerRenderUpdate", 1)
+    parser = argparse.ArgumentParser(description="SPH")
 
     initialize()
 
@@ -1861,23 +1868,23 @@ def main():
 
     window = ti.ui.Window("SPH", (1024, 1024), show_window=True, vsync=True)
 
+    gui = window.get_gui()
     scene = ti.ui.Scene()
     camera = ti.ui.Camera()
-    camera.position(4, 2, 3)
+    cam_init_pos = [4, 2, 3]
+    cam_init_lookat = [-2.3, -0.6, -1.1]
+    camera.position(*cam_init_pos)
+    camera.lookat(*cam_init_lookat)
     camera.up(0.0, 1.0, 0.0)
-    camera.lookat(-2.3, -0.6, -1.1)
     camera.fov(45)
     scene.set_camera(camera)
-
     canvas = window.get_canvas()
-    radius = 0.002
     movement_speed = 0.02
-    background_color = BLACK
-    particle_color = WHITE
 
     box_anchors, box_lines_indices = make_domainbox()
 
-    cnt = 0
+    num_substeps = get_cfg("numberOfStepsPerRenderUpdate", 1)
+    show_widget = get_cfg("showWidget", False)
     meta.paused = False
     meta.step_num = 0
     meta.frame = 0
@@ -1895,9 +1902,8 @@ def main():
                 solver.step()
                 meta.step_num += 1
                 meta.frame += 1
-
-        # print(camera.curr_position)
-        # print(camera.curr_lookat)
+        if show_widget:
+            set_widgets(gui)
         camera.track_user_inputs(window, movement_speed=movement_speed, hold_key=ti.ui.RMB)
         scene.set_camera(camera)
         scene.point_light((2.0, 2.0, 2.0), color=(1.0, 1.0, 1.0))
@@ -1905,7 +1911,6 @@ def main():
         scene.particles(meta.pd.x, radius=meta.parm.particle_radius, per_vertex_color=meta.pd.color)
         scene.lines(box_anchors, indices=box_lines_indices, color=(0.99, 0.68, 0.28), width=1.0)
         canvas.scene(scene)
-        cnt += 1
         window.show()
 
 
