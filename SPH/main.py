@@ -1381,9 +1381,9 @@ class DFSPHSolver(SPHBase):
         self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
         self.num_particles = meta.particle_max_num
 
-        self.use_surfaceTensionModel = False
+        self.use_surfaceTensionModel = True
         self.use_nonNewtonianModel = True
-        self.use_viscosityModel = False
+        self.use_viscosityModel = True
         self.use_dragForceModel = False
         self.use_elasticityModel = False
 
@@ -1403,19 +1403,17 @@ class DFSPHSolver(SPHBase):
 
     def compute_non_pressure_forces(self):
         if self.use_surfaceTensionModel:
-            self.surfaceTensionModel.step()
+            # self.surfaceTensionModel.step()
+            self.compute_surface_tension_kernel()
         if self.use_nonNewtonianModel:
             self.nonNewtonianModel.step()
         if self.use_viscosityModel:
-            self.viscosityModel.step()
+            # self.viscosityModel.step()
+            self.compute_viscosity_force_kernel()
         if self.use_dragForceModel:
             self.dragForceModel.step()
         if self.use_elasticityModel:
             self.elasticityModel.step()
-
-        # legacy
-        self.compute_surface_tension_kernel()
-        self.compute_viscosity_force_kernel()
 
     @ti.func
     def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
