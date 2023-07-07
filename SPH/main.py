@@ -54,8 +54,10 @@ def filedialog():
 
 
 class SimConfig:
-    def __init__(self, scene_path) -> None:
+    def __init__(self, scene_path="") -> None:
         self.config = None
+        if scene_path == "":
+            scene_path = filedialog()
         with open(scene_path, "r") as f:
             self.config = json.load(f)
         print(json.dumps(self.config, indent=2))
@@ -99,8 +101,7 @@ class PhaseInfo:
 # ---------------------------------------------------------------------------- #
 #                               global variables                               #
 # ---------------------------------------------------------------------------- #
-meta.scene_path = filedialog()
-meta.config = SimConfig(meta.scene_path)
+meta.config = SimConfig()
 meta.phase_info = dict()
 
 
