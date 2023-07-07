@@ -12,14 +12,13 @@ from abc import abstractmethod
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
-sph_root_path = os.path.dirname(os.path.abspath(__file__))
-
 
 class Meta:
     ...
 
 
 meta = Meta()
+
 
 FLUID = 0
 SOLID = 1
@@ -36,6 +35,8 @@ STATIC = 0
 RIGID = 1
 ELASTIC = 2
 
+meta.sph_root_path = os.path.dirname(os.path.abspath(__file__))
+
 
 # ---------------------------------------------------------------------------- #
 #                                read json scene                               #
@@ -45,7 +46,7 @@ def filedialog():
     from tkinter import filedialog
 
     root = tk.Tk()
-    root.filename = filedialog.askopenfilename(initialdir=sph_root_path + "/data/scenes", title="Select a File")
+    root.filename = filedialog.askopenfilename(initialdir=meta.sph_root_path + "/data/scenes", title="Select a File")
     filename = root.filename
     root.destroy()  # close the window
     print("Open scene file: ", filename)
@@ -276,7 +277,7 @@ def animate_particles(pos):
         meta.anime_file = get_cfg("animeFile", None)
 
     if meta.anime_file is not None:
-        pts = read_ply_particles_with_user_data(sph_root_path + meta.anime_file)
+        pts = read_ply_particles_with_user_data(meta.sph_root_path + meta.anime_file)
         frames = pts["frame"]
         dx, dy, dz = pts["dx"], pts["dy"], pts["dz"]
 
@@ -481,7 +482,7 @@ def parse_cfg(
     cfg_i, cnt, startnum, phase_id_start, default_material, default_solid_type, default_color, is_dynamic, pos=None
 ):
     if pos is None:
-        pos = read_ply_particles(sph_root_path + cfg_i["geometryFile"])
+        pos = read_ply_particles(meta.sph_root_path + cfg_i["geometryFile"])
     pos = transform(pos, cfg_i)
     parnum = pos.shape[0]
     phase_id = cfg_i.get("id", cnt) + phase_id_start  # rigid solid phase_id starts from 2000
