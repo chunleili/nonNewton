@@ -1,0 +1,28 @@
+{
+	"Configuration":
+	{
+        "domainStart": [0.0, 0.0, 0.0],
+        "domainEnd": [2.0, 2.0, 2.0],
+		"particleRadius": 0.01,
+		"density0": 1000,
+		"simulationMethod": 4,
+		"gravitation": [0.0, -9.81, 0.0],
+		"timeStepSize": 0.004,
+		"boundaryHandlingMethod": 0
+	},
+	"FluidParticles": [
+		{
+			"geometryFile": "./data/models/cube.ply",
+            "nonNewtonMethod": 1,
+            "viscosityMethod": 13,
+            "viscosity": 0.01,
+            "viscoMaxError": 0.001,
+            "viscoMaxIter": 1000,
+            "viscosityBoundary": 0.1,
+            "viscosity0": 10.0,
+            "viscosity_inf": 0.01,
+            "power_index":0.667,
+            "consistency_index":4.5
+		}
+	]
+}

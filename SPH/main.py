@@ -322,33 +322,35 @@ mat3 = ti.types.matrix(3, 3, ti.f32)
 @ti.data_oriented
 class NonNewton:
     def __init__(self, num_particles):
+        self.cfg = get_fluid_cfg()[0]
+
         self.num_particles = num_particles
         self.strainRateNorm = ti.Vector.field(3, dtype=ti.f32, shape=(num_particles))
         self.strainRate = ti.Matrix.field(3, 3, dtype=ti.f32, shape=(num_particles))
         self.nonNewtonViscosity = ti.field(dtype=ti.f32, shape=(num_particles))
         self.boundaryViscosity = ti.field(dtype=ti.f32, shape=(num_particles))
-        self.nonNewtonMethod = self.NON_NEWTON_METHOD.NEWTONIAN_
 
         self.initParameters()
 
     @unique
     class NON_NEWTON_METHOD(Enum):
-        NEWTONIAN_ = 1
-        POWER_LAW_ = 2
-        CROSS_ = 3
-        CASSON_ = 4
-        CARREAU_ = 5
-        BINGHAM_ = 6
-        HERSCHEL_BULKLEY_ = 7
+        NEWTONIAN_ = 0
+        POWER_LAW_ = 1
+        CROSS_ = 2
+        CASSON_ = 3
+        CARREAU_ = 4
+        BINGHAM_ = 5
+        HERSCHEL_BULKLEY_ = 6
 
     def initParameters(self):
-        self.power_index = 0.667
-        self.consistency_index = 100.0
-        self.viscosity0 = 2000.0
-        self.viscosity_inf = 1.0
-        self.criticalStrainRate = 20.0
-        self.muC = 10.0
-        self.yieldStress = 200.0
+        self.nonNewtonMethod = self.cfg.get("nonNewtonMethod", self.NON_NEWTON_METHOD.NEWTONIAN_)
+        self.power_index = self.cfg.get("power_index", 0.667)
+        self.consistency_index = self.cfg.get("consistency_index", 100.0)
+        self.viscosity0 = self.cfg.get("viscosity0", 2000.0)
+        self.viscosity_inf = self.cfg.get("viscosity_inf", 1.0)
+        self.criticalStrainRate = self.cfg.get("criticalStrainRate", 20.0)
+        self.muC = self.cfg.get("muC", 10.0)
+        self.yieldStress = self.cfg.get("yieldStress", 200.0)
         self.maxViscosity = 0.0
         self.avgViscosity = 0.0
         self.minViscosity = 0.0
