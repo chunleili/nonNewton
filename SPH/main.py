@@ -655,33 +655,6 @@ class NeighborhoodSearchSparse:
             task(p_i, p_j, ret)
 
 
-# ---------------------------------------------------------------------------- #
-#                             fluid solid coupling                             #
-# ---------------------------------------------------------------------------- #
-# @ti.kernel
-# def copy_pos_to_system(src_pos:ti.template(), x:ti.template(), particle_id:ti.template(), startnum:int, endnum:int):
-#     for i in range(startnum, endnum):
-#             x[particle_id[i]] = src_pos[i-startnum]
-
-
-@ti.kernel
-def copy_pos_to_system(src_pos: ti.template(), x: ti.template(), particle_id: ti.template(), startnum: int):
-    for i in range(src_pos.shape[0]):
-        src_id = i + startnum
-        dst_id = particle_id[src_id]
-        x[dst_id] = src_pos[i]
-
-
-# just copy the rigid body position to the particle system
-def oneway_coupling(rb):
-    rb_phase_id = rb.phase_id
-    startnum = meta.phase_info[rb_phase_id].startnum
-    parnum = meta.phase_info[rb_phase_id].parnum
-    endnum = startnum + parnum
-    copy_pos_to_system(rb.positions, meta.pd.x, meta.pd.particle_id, startnum)
-    # range_copy(meta.pd.x, rb.positions, 0)
-
-
 @ti.func
 def cubic_kernel(r_norm):
     res = ti.cast(0.0, ti.f32)
