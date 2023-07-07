@@ -70,18 +70,26 @@ class SimConfig:
 
 
 def get_cfg(name, default=None):
+    if not hasattr(meta, "config"):
+        meta.config = SimConfig()
     return meta.config.get_cfg(name, default)
 
 
 def get_fluid_cfg():
+    if not hasattr(meta, "config"):
+        meta.config = SimConfig()
     return meta.config.config.get("FluidParticles", [])
 
 
 def get_solid_cfg():
+    if not hasattr(meta, "config"):
+        meta.config = SimConfig()
     return meta.config.config.get("SolidParticles", [])
 
 
 def get_cfg_list(name, default=None):
+    if not hasattr(meta, "config"):
+        meta.config = SimConfig()
     return meta.config.config.get(name, default)
 
 
@@ -96,12 +104,6 @@ class PhaseInfo:
     color: tuple = WHITE
     pos: np.ndarray = None
     solid_type: int = STATIC
-
-
-# ---------------------------------------------------------------------------- #
-#                               global variables                               #
-# ---------------------------------------------------------------------------- #
-meta.config = SimConfig()
 
 
 # ---------------------------------------------------------------------------- #
