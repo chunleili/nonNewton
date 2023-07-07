@@ -1414,7 +1414,8 @@ class DFSPHSolver(SPHBase):
             self.elasticityModel.step()
 
         # legacy
-        self.compute_non_pressure_forces_kernel()
+        self.compute_surface_tension_kernel()
+        self.compute_viscosity_force_kernel()
 
     @ti.func
     def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
@@ -1474,11 +1475,18 @@ class DFSPHSolver(SPHBase):
                     meta.pd.acceleration[p_j] += -f_v
 
     @ti.kernel
-    def compute_non_pressure_forces_kernel(self):
+    def compute_surface_tension_kernel(self):
         for p_i in range(self.num_particles):
             if meta.pd.material[p_i] == FLUID:
                 d_v = ti.math.vec3(0.0)
                 meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
+                meta.pd.acceleration[p_i] += d_v
+
+    @ti.kernel
+    def compute_viscosity_force_kernel(self):
+        for p_i in range(self.num_particles):
+            if meta.pd.material[p_i] == FLUID:
+                d_v = ti.math.vec3(0.0)
                 meta.ns.for_all_neighbors(p_i, self.compute_viscosity_force_task, d_v)
                 meta.pd.acceleration[p_i] += d_v
 
