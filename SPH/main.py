@@ -1399,7 +1399,7 @@ class DFSPHSolver(SPHBase):
             self.divergence_solve()
         self.clear_accelerations()
         self.compute_non_pressure_forces()
-        self.predict_velocity()
+        self.non_pressure_advect()
         self.pressure_solve()
 
     def compute_non_pressure_forces(self):
@@ -1764,7 +1764,7 @@ class DFSPHSolver(SPHBase):
                     )
 
     @ti.kernel
-    def predict_velocity(self):
+    def non_pressure_advect(self):
         # compute new velocities only considering non-pressure forces
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.is_dynamic[p_i] and meta.pd.material[p_i] == FLUID:
