@@ -52,9 +52,6 @@ def filedialog():
     return filename
 
 
-meta.scene_path = filedialog()
-
-
 class SimConfig:
     def __init__(self, scene_path) -> None:
         self.config = None
@@ -67,9 +64,6 @@ class SimConfig:
             return default
         else:
             return self.config["Configuration"][name]
-
-
-meta.config = SimConfig(meta.scene_path)
 
 
 def get_cfg(name, default=None):
@@ -86,6 +80,27 @@ def get_solid_cfg():
 
 def get_cfg_list(name, default=None):
     return meta.config.config.get(name, default)
+
+
+@dataclass
+class PhaseInfo:
+    uid: int = 0
+    parnum: int = 0
+    startnum: int = 0  # the start index of this phase in the particle array
+    material: int = FLUID
+    is_dynamic: bool = False
+    cfg: dict = None
+    color: tuple = WHITE
+    pos: np.ndarray = None
+    solid_type: int = STATIC
+
+
+# ---------------------------------------------------------------------------- #
+#                               global variables                               #
+# ---------------------------------------------------------------------------- #
+meta.scene_path = filedialog()
+meta.config = SimConfig(meta.scene_path)
+meta.phase_info = dict()
 
 
 # ---------------------------------------------------------------------------- #
@@ -388,22 +403,6 @@ class RigidBody:
         for i in range(num_particles):
             res += radius_vector[i].outer_product(radius_vector[i])
         q_inv[None] = res.inverse()
-
-
-@dataclass
-class PhaseInfo:
-    uid: int = 0
-    parnum: int = 0
-    startnum: int = 0  # the start index of this phase in the particle array
-    material: int = FLUID
-    is_dynamic: bool = False
-    cfg: dict = None
-    color: tuple = WHITE
-    pos: np.ndarray = None
-    solid_type: int = STATIC
-
-
-meta.phase_info = dict()
 
 
 @ti.data_oriented
