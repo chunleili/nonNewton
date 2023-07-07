@@ -84,6 +84,10 @@ def get_solid_cfg():
     return meta.config.config.get("SolidParticles", [])
 
 
+def get_cfg_list(name, default=None):
+    return meta.config.config.get(name, default)
+
+
 # ---------------------------------------------------------------------------- #
 #                                      io                                      #
 # ---------------------------------------------------------------------------- #
@@ -440,7 +444,7 @@ def load_particles():
     for cfg_i in cfgs:
         fluid_particle_num, cnt_fluid = parse_cfg(cfg_i, cnt_fluid, fluid_particle_num, 0, FLUID, STATIC, BLUE, 1)
 
-    cfgs = meta.config.config.get("FluidTanks", [])
+    cfgs = get_cfg_list("FluidTanks", [])
     for cfg_i in cfgs:
         pos = fill_tank(cfg_i["height"])
         fluid_particle_num, cnt_fluid = parse_cfg(cfg_i, cnt_fluid, fluid_particle_num, 0, FLUID, STATIC, BLUE, 1, pos)
