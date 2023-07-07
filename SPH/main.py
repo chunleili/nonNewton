@@ -1402,6 +1402,21 @@ class DFSPHSolver(SPHBase):
         self.predict_velocity()
         self.pressure_solve()
 
+    def compute_non_pressure_forces(self):
+        if self.use_surfaceTensionModel:
+            self.surfaceTensionModel.step()
+        if self.use_nonNewtonianModel:
+            self.nonNewtonianModel.step()
+        if self.use_viscosityModel:
+            self.viscosityModel.step()
+        if self.use_dragForceModel:
+            self.dragForceModel.step()
+        if self.use_elasticityModel:
+            self.elasticityModel.step()
+
+        # legacy
+        self.compute_non_pressure_forces_kernel()
+
     @ti.func
     def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.pd.x[p_i]
@@ -1473,21 +1488,6 @@ class DFSPHSolver(SPHBase):
                 meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
                 meta.ns.for_all_neighbors(p_i, self.compute_viscosity_force_task, d_v)
                 meta.pd.acceleration[p_i] = d_v
-
-    def compute_non_pressure_forces(self):
-        if self.use_surfaceTensionModel:
-            self.surfaceTensionModel.step()
-        if self.use_nonNewtonianModel:
-            self.nonNewtonianModel.step()
-        if self.use_viscosityModel:
-            self.viscosityModel.step()
-        if self.use_dragForceModel:
-            self.dragForceModel.step()
-        if self.use_elasticityModel:
-            self.elasticityModel.step()
-
-        # legacy
-        self.compute_non_pressure_forces_kernel()
 
     @ti.kernel
     def compute_DFSPH_factor(self):
