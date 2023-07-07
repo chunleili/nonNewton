@@ -915,7 +915,15 @@ class SPHBase:
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
 
     def clear_accelerations(self):
-        assign(self.gravity, meta.pd.acceleration)
+        self.clear_accelerations_kernel()
+
+    @ti.kernel
+    def clear_accelerations_kernel(self):
+        for p_i in ti.grouped(meta.pd.x):
+            if is_static_rigid_body(p_i):
+                meta.pd.acceleration[p_i].fill(0.0)
+                continue
+            meta.pd.acceleration[p_i] = self.gravity
 
     @abstractmethod
     def substep(self):
