@@ -102,7 +102,6 @@ class PhaseInfo:
 #                               global variables                               #
 # ---------------------------------------------------------------------------- #
 meta.config = SimConfig()
-meta.phase_info = dict()
 
 
 # ---------------------------------------------------------------------------- #
@@ -1591,6 +1590,7 @@ def make_domainbox():
 
 def initialize():
     meta.parm = Parameter()
+    meta.phase_info = dict()
     meta.particle_max_num, meta.fluid_particle_num = load_particles()
     meta.pd = ParticleData(meta.particle_max_num)
     initialize_particles(meta.pd)  # fill the taichi fields
