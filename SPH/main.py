@@ -9,6 +9,8 @@ import plyfile
 from dataclasses import dataclass
 from functools import reduce
 from abc import abstractmethod
+from enum import Enum, unique
+
 
 ti.init(arch=ti.gpu, device_memory_fraction=0.5)
 
@@ -307,6 +309,173 @@ def hash_3d(grid_index_3d, hashtable_size: int):
     num = grid_index_3d[0] * 73856093 + grid_index_3d[1] * 19349663 + grid_index_3d[2] * 83492791
     res = num % hashtable_size
     return res
+
+
+# ---------------------------------------------------------------------------- #
+#                                   NonNewton                                  #
+# ---------------------------------------------------------------------------- #
+vec3 = ti.math.vec3
+vec6 = ti.types.vector(6, ti.f32)
+mat3 = ti.types.matrix(3, 3, ti.f32)
+
+
+@ti.data_oriented
+class NonNewton:
+    def __init__(self, num_particles):
+        self.num_particles = num_particles
+        self.strainRateNorm = ti.Vector.field(3, dtype=ti.f32, shape=(num_particles))
+        self.strainRate = ti.Matrix.field(3, 3, dtype=ti.f32, shape=(num_particles))
+        self.nonNewtonViscosity = ti.field(dtype=ti.f32, shape=(num_particles))
+        self.boundaryViscosity = ti.field(dtype=ti.f32, shape=(num_particles))
+        self.nonNewtonMethod = self.NON_NEWTON_METHOD.NEWTONIAN_
+
+        self.initParameters()
+
+    @unique
+    class NON_NEWTON_METHOD(Enum):
+        NEWTONIAN_ = 1
+        POWER_LAW_ = 2
+        CROSS_ = 3
+        CASSON_ = 4
+        CARREAU_ = 5
+        BINGHAM_ = 6
+        HERSCHEL_BULKLEY_ = 7
+
+    def initParameters(self):
+        self.power_index = 0.667
+        self.consistency_index = 100.0
+        self.viscosity0 = 2000.0
+        self.viscosity_inf = 1.0
+        self.criticalStrainRate = 20.0
+        self.muC = 10.0
+        self.yieldStress = 200.0
+        self.maxViscosity = 0.0
+        self.avgViscosity = 0.0
+        self.minViscosity = 0.0
+
+    def step(self):
+        self.computeNonNewtonViscosity()
+        self.maxViscosity = (self.nonNewtonViscosity).to_numpy().max()
+        self.minViscosity = (self.nonNewtonViscosity).to_numpy().min()
+        self.avgViscosity = (self.nonNewtonViscosity).to_numpy().mean()
+
+    def computeNonNewtonViscosity(self):
+        self.calcStrainRate(
+            meta.pd.x,
+            meta.pd.v,
+            meta.pd.density,
+            meta.pd.m,
+            meta.ns.num_neighbors,
+            meta.ns.neighbors,
+            self.strainRate,
+            self.strainRateNorm,
+        )
+        if self.nonNewtonMethod == self.NON_NEWTON_METHOD.NEWTONIAN_:
+            self.computeViscosityNewtonian()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.POWER_LAW_:
+            self.computeViscosityPowerLaw()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.CROSS_:
+            self.computeViscosityCrossModel()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.CASSON_:
+            self.computeViscosityCassonModel()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.CARREAU_:
+            self.computeViscosityCarreauModel()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.BINGHAM_:
+            self.computeViscosityBinghamModel()
+        elif self.nonNewtonMethod == self.NON_NEWTON_METHOD.HERSCHEL_BULKLEY_:
+            self.computeViscosityHerschelBulkleyModel()
+        else:
+            self.computeViscosityNewtonian()
+
+    @ti.kernel
+    def computeViscosityNewtonian(self):
+        for i in range(self.num_particles):
+            self.nonNewtonViscosity[i] = self.viscosity0
+
+    @ti.kernel
+    def computeViscosityPowerLaw(self):
+        for i in range(self.num_particles):
+            self.nonNewtonViscosity[i] = self.consistency_index * ti.pow(self.strainRateNorm[i], self.power_index - 1)
+
+    @ti.kernel
+    def computeViscosityCrossModel(self):
+        assert (self.viscosity0 - self.viscosity_inf >= 0.0, "the viscosity0 must be larger than viscosity_inf")
+        for i in range(self.num_particles):
+            self.nonNewtonViscosity[i] = self.viscosity_inf + (self.viscosity0 - self.viscosity_inf) / (
+                1 + ti.pow(self.consistency_index * self.strainRateNorm[i], self.power_index)
+            )
+
+    @ti.kernel
+    def computeViscosityCassonModel(self):
+        for i in range(self.num_particles):
+            res = ti.sqrt(self.muC) + ti.sqrt(self.yieldStress / self.strainRateNorm[i])
+            self.nonNewtonViscosity[i] = res * res
+
+    @ti.kernel
+    def computeViscosityCarreauModel(self):
+        for i in range(self.num_particles):
+            self.nonNewtonViscosity[i] = self.viscosity_inf + (self.viscosity0 - self.viscosity_inf) / (
+                1
+                + ti.pow(
+                    self.consistency_index * self.strainRateNorm[i] * self.strainRateNorm[i],
+                    (1.0 - self.power_index) / 2.0,
+                )
+            )
+
+    @ti.kernel
+    def computeViscosityBingham(self):
+        for i in range(self.num_particles):
+            if self.strainRateNorm[i] < self.criticalStrainRate:
+                self.nonNewtonViscosity[i] = self.viscosity0
+            else:
+                tau0 = self.criticalStrainRate * (self.viscosity0 - self.viscosity_inf)
+                self.nonNewtonViscosity[i] = tau0 / self.strainRateNorm[i] + self.viscosity_inf
+
+    @ti.kernel
+    def computeViscosityHerschelBulkley(self):
+        for i in range(self.num_particles):
+            if self.strainRateNorm[i] < self.criticalStrainRate:
+                self.nonNewtonViscosity[i] = self.viscosity0
+            else:
+                tau0 = self.viscosity0 * self.criticalStrainRate - self.consistency_index * ti.pow(
+                    self.criticalStrainRate, self.power_index
+                )
+                self.nonNewtonViscosity[i] = tau0 / self.strainRateNorm[i] + self.consistency_index * ti.pow(
+                    self.strainRateNorm[i], self.power_index - 1.0
+                )
+
+    @ti.kernel
+    def calcStrainRate(
+        self,
+        pos: ti.template(),
+        vel: ti.template(),
+        den: ti.template(),
+        mass: ti.template(),
+        numNeighbors: ti.template(),
+        neighbors: ti.template(),
+        strainRate: ti.template(),
+        strainRateNorm: ti.template(),
+    ):
+        for i in range(self.num_particles):
+            xi = pos[i]
+            vi = vel[i]
+            density_i = den[i]
+
+            velGrad = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+            strainRate_i = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+
+            for j in range(numNeighbors[i]):
+                neighborIndex = neighbors[i, j]
+                xj = pos[neighborIndex]
+                vj = vel[neighborIndex]
+                gradW = cubic_kernel_derivative(xi - xj)
+                vji = vj - vi
+                m = mass[neighborIndex]
+                velGrad = vji.outer_product(gradW)
+                strainRate_i = velGrad + velGrad.transpose()
+                strainRate_i *= m
+            strainRate[i] = (0.5 / density_i) * strainRate_i
+            strainRateNorm[i] = strainRate_i.norm()
 
 
 # ---------------------------------------------------------------------------- #
@@ -1210,6 +1379,15 @@ class DFSPHSolver(SPHBase):
         self.max_error_V = get_cfg("maxErrorV", 0.1)  # max error of divergence solver iteration in percentage
         self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
 
+        self.use_surfaceTensionModel = False
+        self.use_nonNewtonianModel = True
+        self.use_viscosityModel = False
+        self.use_dragForceModel = False
+        self.use_elasticityModel = False
+
+        if self.use_nonNewtonianModel:
+            self.nonNewtonianModel = NonNewton(meta.particle_max_num)
+
     @ti.func
     def compute_non_pressure_forces_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.pd.x[p_i]
@@ -1266,7 +1444,7 @@ class DFSPHSolver(SPHBase):
                     meta.pd.acceleration[p_j] += -f_v
 
     @ti.kernel
-    def compute_non_pressure_forces(self):
+    def compute_non_pressure_forces_kernel(self):
         for p_i in ti.grouped(meta.pd.x):
             if is_static_rigid_body(p_i):
                 meta.pd.acceleration[p_i].fill(0.0)
@@ -1278,6 +1456,21 @@ class DFSPHSolver(SPHBase):
             if meta.pd.material[p_i] == FLUID:
                 meta.ns.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
                 meta.pd.acceleration[p_i] = d_v
+
+    def compute_non_pressure_forces(self):
+        if self.use_surfaceTensionModel:
+            self.surfaceTensionModel.step()
+        if self.use_nonNewtonianModel:
+            self.nonNewtonianModel.step()
+        if self.use_viscosityModel:
+            self.viscosityModel.step()
+        if self.use_dragForceModel:
+            self.dragForceModel.step()
+        if self.use_elasticityModel:
+            self.elasticityModel.step()
+
+        # legacy
+        self.compute_non_pressure_forces_kernel()
 
     @ti.kernel
     def compute_DFSPH_factor(self):
