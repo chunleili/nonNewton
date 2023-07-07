@@ -655,6 +655,9 @@ class NeighborhoodSearchSparse:
             task(p_i, p_j, ret)
 
 
+# ---------------------------------------------------------------------------- #
+#                                   SPH Base                                   #
+# ---------------------------------------------------------------------------- #
 @ti.func
 def cubic_kernel(r_norm):
     res = ti.cast(0.0, ti.f32)
@@ -704,11 +707,6 @@ def cubic_kernel_derivative(r):
     return res
 
 
-# ---------------------------------------------------------------------------- #
-#                                   SPH Base                                   #
-# ---------------------------------------------------------------------------- #
-
-
 @ti.data_oriented
 class SPHBase:
     def __init__(self):
@@ -752,50 +750,11 @@ class SPHBase:
 
     @ti.func
     def cubic_kernel(self, r_norm):
-        # res = ti.cast(0.0, ti.f32)
-        # h = meta.parm.support_radius
-        # # value of cubic spline smoothing kernel
-        # k = 1.0
-        # if meta.parm.dim == 1:
-        #     k = 4 / 3
-        # elif meta.parm.dim == 2:
-        #     k = 40 / 7 / np.pi
-        # elif meta.parm.dim == 3:
-        #     k = 8 / np.pi
-        # k /= h**meta.parm.dim
-        # q = r_norm / h
-        # if q <= 1.0:
-        #     if q <= 0.5:
-        #         q2 = q * q
-        #         q3 = q2 * q
-        #         res = k * (6.0 * q3 - 6.0 * q2 + 1)
-        #     else:
-        #         res = k * 2 * ti.pow(1 - q, 3.0)
         res = cubic_kernel(r_norm)
         return res
 
     @ti.func
     def cubic_kernel_derivative(self, r):
-        # h = meta.parm.support_radius
-        # # derivative of cubic spline smoothing kernel
-        # k = 1.0
-        # if meta.parm.dim == 1:
-        #     k = 4 / 3
-        # elif meta.parm.dim == 2:
-        #     k = 40 / 7 / np.pi
-        # elif meta.parm.dim == 3:
-        #     k = 8 / np.pi
-        # k = 6.0 * k / h**meta.parm.dim
-        # r_norm = r.norm()
-        # q = r_norm / h
-        # res = ti.Vector([0.0 for _ in range(meta.parm.dim)])
-        # if r_norm > 1e-5 and q <= 1.0:
-        #     grad_q = r / (r_norm * h)
-        #     if q <= 0.5:
-        #         res = k * q * (3.0 * q - 2.0) * grad_q
-        #     else:
-        #         factor = 1.0 - q
-        #         res = k * (-factor * factor) * grad_q
         res = cubic_kernel_derivative(r)
         return res
 
