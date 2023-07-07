@@ -1392,9 +1392,8 @@ class DFSPHSolver(SPHBase):
             self.nonNewtonianModel = NonNewton(meta.particle_max_num)
 
     @ti.func
-    def compute_non_pressure_forces_task(self, p_i, p_j, ret: ti.template()):
+    def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.pd.x[p_i]
-
         ############## Surface Tension ###############
         if meta.pd.material[p_j] == FLUID:
             # Fluid neighbors
@@ -1413,6 +1412,9 @@ class DFSPHSolver(SPHBase):
                     * self.cubic_kernel(ti.Vector([meta.parm.particle_diameter, 0.0, 0.0]).norm())
                 )
 
+    @ti.func
+    def compute_viscosity_force_task(self, p_i, p_j, ret: ti.template()):
+        x_i = meta.pd.x[p_i]
         ############### Viscosoty Force ###############
         d = 2 * (meta.parm.dim + 2)
         x_j = meta.pd.x[p_j]
@@ -1457,7 +1459,8 @@ class DFSPHSolver(SPHBase):
             d_v = self.gravity
             meta.pd.acceleration[p_i] = d_v
             if meta.pd.material[p_i] == FLUID:
-                meta.ns.for_all_neighbors(p_i, self.compute_non_pressure_forces_task, d_v)
+                meta.ns.for_all_neighbors(p_i, self.compute_surface_tension_task, d_v)
+                meta.ns.for_all_neighbors(p_i, self.compute_viscosity_force_task, d_v)
                 meta.pd.acceleration[p_i] = d_v
 
     def compute_non_pressure_forces(self):
