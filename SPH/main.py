@@ -1391,6 +1391,17 @@ class DFSPHSolver(SPHBase):
         if self.use_nonNewtonianModel:
             self.nonNewtonianModel = NonNewton(meta.particle_max_num)
 
+    def substep(self):
+        self.compute_densities()
+        print(f"max density: {meta.pd.density.to_numpy().max()}")
+        self.compute_DFSPH_factor()
+        if self.enable_divergence_solver:
+            self.divergence_solve()
+        self.clear_accelerations()
+        self.compute_non_pressure_forces()
+        self.predict_velocity()
+        self.pressure_solve()
+
     @ti.func
     def compute_surface_tension_task(self, p_i, p_j, ret: ti.template()):
         x_i = meta.pd.x[p_i]
@@ -1758,17 +1769,6 @@ class DFSPHSolver(SPHBase):
         for p_i in ti.grouped(meta.pd.x):
             if meta.pd.is_dynamic[p_i] and meta.pd.material[p_i] == FLUID:
                 meta.pd.v[p_i] += self.dt[None] * meta.pd.acceleration[p_i]
-
-    def substep(self):
-        self.compute_densities()
-        print(f"max density: {meta.pd.density.to_numpy().max()}")
-        self.compute_DFSPH_factor()
-        if self.enable_divergence_solver:
-            self.divergence_solve()
-        self.clear_accelerations()
-        self.compute_non_pressure_forces()
-        self.predict_velocity()
-        self.pressure_solve()
 
 
 def make_domainbox():
