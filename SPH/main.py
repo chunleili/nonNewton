@@ -322,7 +322,9 @@ mat3 = ti.types.matrix(3, 3, ti.f32)
 @ti.data_oriented
 class NonNewton:
     def __init__(self, num_particles):
-        self.cfg = get_fluid_cfg()[0]
+        cfgs = get_fluid_cfg()
+        if cfgs != []:
+            self.cfg = cfgs[0]
 
         self.num_particles = num_particles
         self.strainRateNorm = ti.Vector.field(3, dtype=ti.f32, shape=(num_particles))
@@ -793,6 +795,12 @@ class NeighborhoodSearchSparse:
     @ti.func
     def pos_to_index(self, pos):
         return (pos / self.grid_size).cast(int)
+
+    def get_num_neighbors(self, i):
+        return self.num_neighbors[i]
+
+    def get_neighbor(self, i, j):
+        return self.neighbors[i, j]
 
     @ti.kernel
     def update_grid(self):
@@ -1462,11 +1470,11 @@ class DFSPHSolver(SPHBase):
         self.max_error = get_cfg("maxError", 0.05)  # max error of pressure solve iteration in percentage
         self.num_particles = meta.particle_max_num
 
-        self.use_surfaceTensionModel = True
-        self.use_nonNewtonianModel = True
-        self.use_viscosityModel = True
-        self.use_dragForceModel = False
-        self.use_elasticityModel = False
+        self.use_surfaceTensionModel = get_cfg("useSurfaceTensionModel", True)
+        self.use_nonNewtonianModel = get_cfg("useNonNewtonianModel", False)
+        self.use_viscosityModel = get_cfg("useViscosityModel", True)
+        self.use_dragForceModel = get_cfg("useDragForceModel", False)
+        self.use_elasticityModel = get_cfg("useElasticityModel", False)
 
         if self.use_surfaceTensionModel:
             self.surfaceTensionModel = SurfaceTension(self.num_particles)
