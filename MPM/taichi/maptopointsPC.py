@@ -112,6 +112,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     icon_ti.from_numpy(icon.T)
     xp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xp.shape[1]))
     xp_ti.from_numpy(xp.T)
+    dx_ti = ti.math.vec3([dx[0], dx[1], dx[2]])
 
     # 新建变量
     pp = ti.ndarray(dtype=ti.f32, shape=(Np))
@@ -129,7 +130,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
         icon_ti,
         xp_ti,
         dt,
-        dx,
+        dx_ti,
         xmin,
         nexyz,
         vp,
@@ -199,9 +200,9 @@ def maptopointsPC_kernel(
     icon: ti.types.ndarray(),
     xp: ti.types.ndarray(),
     dt: float,
-    dx: ti.types.ndarray(),
-    xmin: ti.types.ndarray(),
-    nexyz: ti.types.ndarray(),
+    dx: ti.types.vector(3, float),
+    xmin: ti.types.vector(3, float),
+    nexyz: ti.types.vector(3, int),
     vp: ti.types.ndarray(),
     p: ti.types.ndarray(),
     g: float,
@@ -232,12 +233,4 @@ def maptopointsPC_kernel(
         k1[ip][2] = v_iv_2.dot(n)
         xpF[ip] = xp[ip] + k1[ip] * dt / 2
 
-        natcoords_func(
-            xpF[ip],
-            nexyz,
-            xmin,
-            dx,
-            xmin,
-            nexyz,
-        )
-        # [xpn2, nep2] = natcoords(xpF[:, ip].reshape(-1, 1), dx, xmin, nexyz)
+        natcoords_func(xpF[ip], dx, xmin, nexyz)
