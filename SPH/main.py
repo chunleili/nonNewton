@@ -1468,6 +1468,51 @@ class ViscosityModel:
                 meta.pd.acceleration[p_i] += d_v
 
 
+@ti.kernel
+def matrixVecProd(v: ti.template(), mv: ti.template()):
+    for i in v:
+        ...
+
+
+@ti.data_oriented
+class Viscosity_Weiler2018:
+    def __init__(self) -> None:
+        self.numParicles = meta.particle_max_num
+        self.m_maxIter = 100
+        self.m_maxError = 0.01
+        self.m_iterations = 0
+        self.boundaryViscosity = 0.0
+        self.m_tangentialDistanceFactor = 0.5
+        self.m_vDiff = ti.Vector.field(3, dtype=ti.f32, shape=self.numParicles)
+        self.m_vDiffOld = ti.Vector.field(3, dtype=ti.f32, shape=self.numParicles)
+
+        self.x = ti.field(dtype=ti.f32, shape=self.numParicles)
+        self.Ax = ti.field(dtype=ti.f32, shape=self.numParicles)
+        self.b = ti.field(dtype=ti.f32, shape=3 * self.numParicles)
+        self.g = ti.field(dtype=ti.f32, shape=3 * self.numParicles)
+
+    def initParameters(self):
+        pass
+
+    def step(self):
+        density0 = meta.parm.density0
+        numParticles = self.numParicles
+        h = meta.parm.dt[None]
+        matrixVecProd(self.x, self.Ax)
+        A = ti.linalg.LinearOperator(matrixVecProd)
+        self.computeRHS(self.b, self.g)
+        ti.linalg.MatrixFreeCG(A, self.b, self.x)
+
+    def computeRHS(self, b, g):
+        pass
+
+    def computeRHS_kernel(self, b, g):
+        pass
+
+    def applyForces(self, x):
+        pass
+
+
 # ---------------------------------------------------------------------------- #
 #                                     DFSPH                                    #
 # ---------------------------------------------------------------------------- #
