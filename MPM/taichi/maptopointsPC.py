@@ -92,7 +92,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     return xp, vp, Tp, pp
 
 
-def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
+def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
     # get natural coordinates of particles within cell
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
     nep = nep.flatten()
@@ -113,6 +113,8 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     xp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xp.shape[1]))
     xp_ti.from_numpy(xp.T)
     dx_ti = ti.math.vec3([dx[0], dx[1], dx[2]])
+    vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[1]))
+    vp_ti.from_numpy(vp.T)
 
     # 新建变量
     pp = ti.ndarray(dtype=ti.f32, shape=(Np))
@@ -133,7 +135,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
         dx_ti,
         xmin,
         nexyz,
-        vp,
+        vp_ti,
         p,
         g,
         Tg,
@@ -157,7 +159,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     k4 = k4.to_numpy().T
     xp = xp_ti.to_numpy().T
     xpF = xpF.to_numpy().T
-    # vp = vp_ti.to_numpy().T
+    vp = vp_ti.to_numpy().T
     # pp = pp_ti.to_numpy().T
     end_t = time()
     print("RK4: ", end_t - start_t)
@@ -283,4 +285,9 @@ def maptopointsPC_kernel(
         xp[ip][2] += (
             dt * (k1[ip][2] / 6 + k2[ip][2] / 3 + k3[ip][2] / 3 + k4[ip][2] / 6) + 1 / 2 * g / Fr**2 * dt**2
         )
-        ...
+
+        vp[ip][0] = k1[ip][0] / 6 + k2[ip][0] / 3 + k3[ip][0] / 3 + k4[ip][0] / 6
+        vp[ip][1] = k1[ip][1] / 6 + k2[ip][1] / 3 + k3[ip][1] / 3 + k4[ip][1] / 6
+        vp[ip][2] = (k1[ip][2] / 6 + k2[ip][2] / 3 + k3[ip][2] / 3 + k4[ip][2] / 6) + g / Fr**2 * dt
+
+        ### Update stress
