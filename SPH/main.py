@@ -180,6 +180,15 @@ def fill_tank(height):
     return pts
 
 
+def export_ply_particles(particles, filename):
+    vertices = np.zeros(particles.shape[0], dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
+    vertices["x"] = particles[:, 0]
+    vertices["y"] = particles[:, 1]
+    vertices["z"] = particles[:, 2]
+    el = plyfile.PlyElement.describe(vertices, "vertex")
+    plyfile.PlyData([el]).write(filename)
+
+
 # ---------------------------------------------------------------------------- #
 #                            other global functions                            #
 # ---------------------------------------------------------------------------- #
@@ -925,6 +934,9 @@ class SPHBase:
         animate_particles(meta.pd.x)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, FLUID)
         self.enforce_boundary_3D(meta.pd.x, meta.pd.v, SOLID)
+
+        if get_cfg("exportPly"):
+            export_ply_particles(meta.pd.x.to_numpy(), f"results/{meta.step_num}.ply")
 
     def clear_accelerations(self):
         self.clear_accelerations_kernel()
