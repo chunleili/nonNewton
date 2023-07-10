@@ -92,7 +92,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     return xp, vp, Tp, pp
 
 
-def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
+def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
     # get natural coordinates of particles within cell
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
     nep = nep.flatten()
@@ -153,6 +153,8 @@ def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr
     )
     k1 = k1.to_numpy().T
     k2 = k2.to_numpy().T
+    k3 = k3.to_numpy().T
+    k4 = k4.to_numpy().T
     xp = xp_ti.to_numpy().T
     xpF = xpF.to_numpy().T
     # vp = vp_ti.to_numpy().T
@@ -247,3 +249,38 @@ def maptopointsPC_kernel(
         k2[ip][0] = 0.5 * (v_iv_0 + vnew_iv_0).dot(nn)
         k2[ip][1] = 0.5 * (v_iv_1 + vnew_iv_1).dot(nn)
         k2[ip][2] = 0.5 * (v_iv_2 + vnew_iv_2).dot(nn)
+
+        xpF[ip] = xp[ip] + k2[ip] * dt / 2
+        xpn2, nep2 = natcoords_func(xpF[ip], dx, xmin, nexyz)
+        i2 = nep2
+        iv2 = icon[i2]
+        nn = shape3D_func(xpn2[0], xpn2[1], xpn2[2])
+        v_iv_0 = get_slice_8(v, iv2, 0)
+        v_iv_1 = get_slice_8(v, iv2, 1)
+        v_iv_2 = get_slice_8(v, iv2, 2)
+        vnew_iv_0 = get_slice_8(vnew, iv2, 0)
+        vnew_iv_1 = get_slice_8(vnew, iv2, 1)
+        vnew_iv_2 = get_slice_8(vnew, iv2, 2)
+        k3[ip][0] = 0.5 * (v_iv_0 + vnew_iv_0).dot(nn)
+        k3[ip][1] = 0.5 * (v_iv_1 + vnew_iv_1).dot(nn)
+        k3[ip][2] = 0.5 * (v_iv_2 + vnew_iv_2).dot(nn)
+
+        xpF[ip] = xp[ip] + k3[ip] * dt
+        xpn2, nep2 = natcoords_func(xpF[ip], dx, xmin, nexyz)
+        i2 = nep2
+        iv2 = icon[i2]
+        nn = shape3D_func(xpn2[0], xpn2[1], xpn2[2])
+        vnew_iv_0 = get_slice_8(vnew, iv2, 0)
+        vnew_iv_1 = get_slice_8(vnew, iv2, 1)
+        vnew_iv_2 = get_slice_8(vnew, iv2, 2)
+        print(vnew_iv_2)
+        k4[ip][0] = (vnew_iv_0).dot(nn)
+        k4[ip][1] = (vnew_iv_1).dot(nn)
+        k4[ip][2] = (vnew_iv_2).dot(nn)
+
+        xp[ip][0] = xp[ip][0] + dt * (k1[ip][0] / 6 + k2[ip][0] / 3 + k3[ip][0] / 3 + k4[ip][0] / 6)
+        xp[ip][1] = xp[ip][1] + dt * (k1[ip][1] / 6 + k2[ip][1] / 3 + k3[ip][1] / 3 + k4[ip][1] / 6)
+        xp[ip][2] += (
+            dt * (k1[ip][2] / 6 + k2[ip][2] / 3 + k3[ip][2] / 3 + k4[ip][2] / 6) + 1 / 2 * g / Fr**2 * dt**2
+        )
+        ...
