@@ -41,3 +41,4 @@ def natcoords_func(xp: ti.math.vec3, dx: ti.math.vec3, xmin: ti.math.vec3, ne: t
     id = nep
     xg = i * dx  # element wise multiplication
     xpn = 2 * (xp - xg) / dx - 1  # relative position to element center node
+    return xpn, nep
