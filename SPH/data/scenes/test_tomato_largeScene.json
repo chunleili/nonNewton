@@ -1,0 +1,25 @@
+{
+	"Configuration":
+	{
+        "domainStart": [0.0, 0.0, 0.0],
+        "domainEnd": [10.0, 10.0, 10.0],
+		"particleRadius": 0.025,
+		"density0": 1000,
+		"simulationMethod": 4,
+		"gravitation": [0.0, -9.81, 0.0],
+		"timeStepSize": 0.004,
+		"boundaryHandlingMethod": 0,
+		"exportPly": true,
+		"viscosity": 1
+	},
+	"FluidParticles": [
+		{
+			"geometryFile": "./data/models/tomato-fluid-dense.ply"
+		}
+	],
+	"SolidParticles": [
+		{
+			"geometryFile": "./data/models/barrier.ply"
+		}
+	]
+}

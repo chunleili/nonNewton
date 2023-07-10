@@ -12,7 +12,8 @@ from abc import abstractmethod
 from enum import Enum, unique
 
 
-ti.init(arch=ti.gpu, device_memory_fraction=0.5)
+# ti.init(arch=ti.gpu, device_memory_fraction=0.5)
+ti.init(arch=ti.cpu)
 
 
 class Meta:
@@ -1887,13 +1888,14 @@ def main():
     camera.fov(45)
     scene.set_camera(camera)
     canvas = window.get_canvas()
+    canvas.set_background_color((0.5, 0.5, 0.5))
     movement_speed = 0.02
 
     box_anchors, box_lines_indices = make_domainbox()
 
     num_substeps = get_cfg("numberOfStepsPerRenderUpdate", 1)
     show_widget = get_cfg("showWidget", True)
-    meta.paused = False
+    meta.paused = True
     meta.step_num = 0
     meta.frame = 0
     while window.running:
