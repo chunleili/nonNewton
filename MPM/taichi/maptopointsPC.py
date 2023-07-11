@@ -252,7 +252,7 @@ def maptopointsPC_kernel(
     k3: ti.types.ndarray(),
     k4: ti.types.ndarray(),
 ):
-    for ip in range(1):
+    for ip in range(Np):
         i = nep[ip]
         iv = icon[i]
         n = shape3D_func(xpn[ip][0], xpn[ip][1], xpn[ip][2])
