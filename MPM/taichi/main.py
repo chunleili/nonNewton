@@ -44,6 +44,7 @@ def main():
     step_time_list = []
     RK4_time_list = []
     P2G_time_list = []
+    massA2_time_list = []
     ## ====time stepping====
     dt = 1e-4
     # CFL * min(lx,ly)/1;
@@ -193,7 +194,13 @@ def main():
         v = vnew
         T = Tnew
         [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
+
+        massA2_start_time = time()
         [Mf, A22d] = massA2(dx, Ng, Ne, icon, f, We, dt)
+        massA2_time = time() - massA2_start_time
+        massA2_time_list.append(massA2_time)
+        print("massA2: ", massA2_time)
+
         NBC = np.where(nn <= 0)[0]  # NBC: non particle nodes, NBS: free surface nodes
         Phi = scipy.sparse.eye(Ng)
         keep_columns = np.ones(Phi.shape[1], dtype=bool)
@@ -264,14 +271,17 @@ def main():
         np.savetxt("results/P2G_time.txt", np.array(P2G_time_list))
         np.savetxt("results/RK4_time.txt", np.array(RK4_time_list))
         np.savetxt("results/step_time.txt", np.array(step_time_list))
+        np.savetxt("results/massA2_time.txt", np.array(massA2_time_list))
     avg_P2g = np.array(P2G_time_list).mean()
     avg_RK4 = np.array(RK4_time_list).mean()
+    avg_massA2 = np.array(massA2_time_list).mean()
     avg_step = np.array(step_time_list).mean()
     program_end_time = time()
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
     print("average P2G time used: ", avg_P2g)
     print("average RK4 time used: ", avg_RK4)
+    print("average massA2 time used: ", avg_massA2)
     print("average step time used: ", avg_step)
 
 
