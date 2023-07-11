@@ -87,6 +87,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
         T5 = Tg[iv + 4 * Ng].T @ n
         T6 = Tg[iv + 5 * Ng].T @ n
         Tp[ip, :] = [T1, T2, T3, T4, T5, T6]
+        ...
     end_t = time()
     print("RK4: ", end_t - start_t)
     return xp, vp, Tp, pp
@@ -115,10 +116,12 @@ def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr
     dx_ti = ti.math.vec3([dx[0], dx[1], dx[2]])
     vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[1]))
     vp_ti.from_numpy(vp.T)
+    xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xp.shape[1]))
+    xpn_ti.from_numpy(xpn.T)
 
     # 新建变量
     pp = ti.ndarray(dtype=ti.f32, shape=(Np))
-    Tp = ti.ndarray(dtype=ti.f32, shape=(Np, 6))
+    Tp = ti.ndarray(dtype=vec6, shape=(Np))
     xpF = ti.ndarray(dtype=ti.math.vec3, shape=(Np))
     k1 = ti.ndarray(dtype=ti.math.vec3, shape=(Np))
     k2 = ti.ndarray(dtype=ti.math.vec3, shape=(Np))
@@ -141,7 +144,7 @@ def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr
         Tg,
         Fr,
         Ng,
-        xpn,
+        xpn_ti,
         nep,
         vnew_ti,
         v_ti,
@@ -160,7 +163,9 @@ def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr
     xp = xp_ti.to_numpy().T
     xpF = xpF.to_numpy().T
     vp = vp_ti.to_numpy().T
-    # pp = pp_ti.to_numpy().T
+    pp = pp.to_numpy()
+    Tp = Tp.to_numpy()
+    xpn = xpn_ti.to_numpy().T
     end_t = time()
     print("RK4: ", end_t - start_t)
     return xp, vp, Tp, pp
@@ -199,6 +204,27 @@ def get_slice_8(arr: ti.types.ndarray(), index: ti.template(), axis: ti.i32):
     )
 
 
+@ti.func
+def get_slice_8_scalar(arr: ti.types.ndarray(), index: ti.template()):
+    """
+    arr: to be sliced
+    index: index of the 8 points
+    axis: x or y or z axis
+    """
+    return ti.Vector(
+        [
+            arr[index[0]],
+            arr[index[1]],
+            arr[index[2]],
+            arr[index[3]],
+            arr[index[4]],
+            arr[index[5]],
+            arr[index[6]],
+            arr[index[7]],
+        ]
+    )
+
+
 @ti.kernel
 def maptopointsPC_kernel(
     Np: int,
@@ -229,7 +255,7 @@ def maptopointsPC_kernel(
     for ip in range(1):
         i = nep[ip]
         iv = icon[i]
-        n = shape3D_func(xpn[ip, 0], xpn[ip, 1], xpn[ip, 2])
+        n = shape3D_func(xpn[ip][0], xpn[ip][1], xpn[ip][2])
         v_iv_0 = get_slice_8(v, iv, 0)
         v_iv_1 = get_slice_8(v, iv, 1)
         v_iv_2 = get_slice_8(v, iv, 2)
@@ -275,7 +301,6 @@ def maptopointsPC_kernel(
         vnew_iv_0 = get_slice_8(vnew, iv2, 0)
         vnew_iv_1 = get_slice_8(vnew, iv2, 1)
         vnew_iv_2 = get_slice_8(vnew, iv2, 2)
-        print(vnew_iv_2)
         k4[ip][0] = (vnew_iv_0).dot(nn)
         k4[ip][1] = (vnew_iv_1).dot(nn)
         k4[ip][2] = (vnew_iv_2).dot(nn)
@@ -291,3 +316,18 @@ def maptopointsPC_kernel(
         vp[ip][2] = (k1[ip][2] / 6 + k2[ip][2] / 3 + k3[ip][2] / 3 + k4[ip][2] / 6) + g / Fr**2 * dt
 
         ### Update stress
+        nPressure = get_slice_8_scalar(p, iv)
+        pp[ip] = nPressure.dot(n)
+        Tg_iv = get_slice_8_scalar(Tg, iv)
+        T1 = Tg_iv.dot(n)
+        Tg_iv_Ng = get_slice_8_scalar(Tg, iv + Ng)
+        T2 = Tg_iv_Ng.dot(n)
+        Tg_iv_2Ng = get_slice_8_scalar(Tg, iv + 2 * Ng)
+        T3 = Tg_iv_2Ng.dot(n)
+        Tg_iv_3Ng = get_slice_8_scalar(Tg, iv + 3 * Ng)
+        T4 = Tg_iv_3Ng.dot(n)
+        Tg_iv_4Ng = get_slice_8_scalar(Tg, iv + 4 * Ng)
+        T5 = Tg_iv_4Ng.dot(n)
+        Tg_iv_5Ng = get_slice_8_scalar(Tg, iv + 5 * Ng)
+        T6 = Tg_iv_5Ng.dot(n)
+        Tp[ip] = [T1, T2, T3, T4, T5, T6]
