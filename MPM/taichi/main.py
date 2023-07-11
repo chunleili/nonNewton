@@ -28,17 +28,21 @@ def main():
     # problem inputs
     ## ====plotting and saving====
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_results", type=int, default=1)
-    parser.add_argument("--enable_plot", type=int, default=1)
+    parser.add_argument("--save_results", type=int, default=0)
+    parser.add_argument("--enable_plot", type=int, default=0)
     parser.add_argument("--num_steps", type=int, default=200)
+    parser.add_argument("--save_time", type=int, default=1)
     args = parser.parse_args()
     save_results = args.save_results
     enable_plot = args.enable_plot
     num_steps = args.num_steps
-    if save_results:
+    save_time = args.save_time
+    if save_results or save_time:
         if not os.path.exists("results"):
             os.makedirs("results")
     program_start_time = time()
+    step_time_list = []
+    RK4_time_list = []
     ## ====time stepping====
     dt = 1e-4
     # CFL * min(lx,ly)/1;
@@ -235,11 +239,14 @@ def main():
             if vnew[NBCv[i]] < 0:
                 vnew[NBCv[i]] = VBC[NBCv[i]]
         ## ===== Grids to Particles=============
-        [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
+        [xp, vp, Tp, pp, RK4_time] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
         v = vnew
         ## ====Plot======
         step_end_time = time()
-        print(f"step: {step}, step time used: {(step_end_time - step_start_time):.2f}s")
+        step_time = step_end_time - step_start_time
+        RK4_time_list.append(RK4_time)
+        step_time_list.append(step_time)
+        print(f"step: {step}, step time used: {(step_time)}")
         if enable_plot:
             plot_step(xp)
         if save_results:
@@ -247,9 +254,16 @@ def main():
             np.savetxt(f"results/xp_{step}.txt", xp)
         step += 1
 
+    if save_time:
+        np.savetxt("results/RK4_time.txt", np.array(RK4_time_list))
+        np.savetxt("results/step_time.txt", np.array(step_time_list))
+    avg_RK4 = np.array(RK4_time_list).mean()
+    avg_step = np.array(step_time_list).mean()
     program_end_time = time()
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
+    print("average RK4 time used: ", avg_RK4)
+    print("average step time used: ", avg_step)
 
 
 def plot_step(xp, plot=True):

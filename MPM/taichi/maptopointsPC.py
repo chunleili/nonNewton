@@ -89,11 +89,12 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
         Tp[ip, :] = [T1, T2, T3, T4, T5, T6]
         ...
     end_t = time()
-    print("RK4: ", end_t - start_t)
-    return xp, vp, Tp, pp
+    RK4_time = end_t - start_t
+    print("RK4: ", RK4_time)
+    return xp, vp, Tp, pp, RK4_time
 
 
-def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
+def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
     # get natural coordinates of particles within cell
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
     nep = nep.flatten()
@@ -167,8 +168,9 @@ def maptopointsPC_(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr
     Tp = Tp.to_numpy()
     xpn = xpn_ti.to_numpy().T
     end_t = time()
-    print("RK4: ", end_t - start_t)
-    return xp, vp, Tp, pp
+    RK4_time = end_t - start_t
+    print("RK4: ", RK4_time)
+    return xp, vp, Tp, pp, RK4_time
 
 
 @ti.func
