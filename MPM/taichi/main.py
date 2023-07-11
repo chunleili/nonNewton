@@ -43,6 +43,7 @@ def main():
     program_start_time = time()
     step_time_list = []
     RK4_time_list = []
+    P2G_time_list = []
     ## ====time stepping====
     dt = 1e-4
     # CFL * min(lx,ly)/1;
@@ -180,7 +181,12 @@ def main():
         step_start_time = time()
         # Map to grid
         [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
+        P2G_start_time = time()
         [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
+        P2G_time = time() - P2G_start_time
+        print(f"P2G: {P2G_time}")
+        P2G_time_list.append(P2G_time)
+
         for i in range(len(NBCv)):
             if vnew[NBCv[i]] < 0:
                 vnew[NBCv[i]] = VBC[NBCv[i]]
@@ -246,7 +252,7 @@ def main():
         step_time = step_end_time - step_start_time
         RK4_time_list.append(RK4_time)
         step_time_list.append(step_time)
-        print(f"step: {step}, step time used: {(step_time)}")
+        print(f"---\nstep: {step}, time: {(step_time)}")
         if enable_plot:
             plot_step(xp)
         if save_results:
@@ -255,13 +261,16 @@ def main():
         step += 1
 
     if save_time:
+        np.savetxt("results/P2G_time.txt", np.array(P2G_time_list))
         np.savetxt("results/RK4_time.txt", np.array(RK4_time_list))
         np.savetxt("results/step_time.txt", np.array(step_time_list))
+    avg_P2g = np.array(P2G_time_list).mean()
     avg_RK4 = np.array(RK4_time_list).mean()
     avg_step = np.array(step_time_list).mean()
     program_end_time = time()
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
+    print("average P2G time used: ", avg_P2g)
     print("average RK4 time used: ", avg_RK4)
     print("average step time used: ", avg_step)
 
