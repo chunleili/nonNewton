@@ -31,7 +31,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--save_results", type=int, default=0)
     parser.add_argument("--enable_plot", type=int, default=0)
-    parser.add_argument("--num_steps", type=int, default=20)
+    parser.add_argument("--num_steps", type=int, default=200)
     parser.add_argument("--save_time", type=int, default=1)
     args = parser.parse_args()
     save_results = args.save_results
@@ -46,7 +46,7 @@ def main():
     RK4_time_list = []
     P2G_time_list = []
     massA2_time_list = []
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(message)s")
     ## ====time stepping====
     dt = 1e-4
     # CFL * min(lx,ly)/1;

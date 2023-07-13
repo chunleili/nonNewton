@@ -1,8 +1,9 @@
 import numpy as np
 import taichi as ti
+from time import time
 
 
-def natcoords(xp, dx, xmin, ne):
+def natcoords_np(xp, dx, xmin, ne):
     n_p = xp.shape[1]
     nep = np.zeros((1, n_p), int)
     xpn = np.zeros((3, n_p))
@@ -13,6 +14,52 @@ def natcoords(xp, dx, xmin, ne):
         id = nep[:, ip]
         xg = i.T * dx  # Xg(con(1,id),:); % left-front-bottom node
         xpn[:, ip] = 2 * (xp[:, ip] - xg.T) / dx.T - 1  # relative position to element center node
+    return xpn, nep
+
+
+def natcoords_ti(xp, dx, xmin, ne):
+    # new var
+    n_p = xp.shape[1]
+    nep_ti = ti.ndarray(dtype=ti.i32, shape=(n_p))
+    xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(n_p))
+
+    # old var
+    xp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(n_p))
+    xp_ti.from_numpy(xp.T)
+    dx_ti = ti.math.vec3(dx)
+    xmin_ti = ti.math.vec3(xmin)
+    ne_ti = ti.math.ivec3(ne)
+
+    natcoords_kernel(xp_ti, dx_ti, xmin_ti, ne_ti, nep_ti, xpn_ti, n_p)
+
+    # copy back
+    xpn = xpn_ti.to_numpy().reshape(3, n_p)
+    nep = nep_ti.to_numpy().reshape(1, n_p)
+    return xpn, nep
+
+
+@ti.kernel
+def natcoords_kernel(
+    xp: ti.types.ndarray(),
+    dx: ti.math.vec3,
+    xmin: ti.math.vec3,
+    ne: ti.math.ivec3,
+    nep: ti.types.ndarray(),
+    xpn: ti.types.ndarray(),
+    n_p: ti.i32,
+):
+    for ip in range(n_p):
+        xx = (xp[ip] - xmin) / dx
+        i = ti_fix(xx)
+        nep[ip] = i[0] + i[1] * ne[0] + i[2] * (ne[1] * ne[0]) + 1
+        xg = i * dx
+        xpn[ip] = 2 * (xp[ip] - xg) / dx - 1
+
+
+def natcoords(xp, dx, xmin, ne):
+    # t = time()
+    xpn, nep = natcoords_ti(xp, dx, xmin, ne)
+    # print("natcoords_ti: ", time() - t)
     return xpn, nep
 
 
