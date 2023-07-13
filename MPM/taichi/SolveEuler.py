@@ -17,12 +17,12 @@ def SolveEuler(X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32
     for i in range(n):
         RHS1 = B1 - A13 @ X3 - yita * A12 @ X2
         # X1 = scipy.sparse.linalg.spsolve(A11, RHS1)
-        X1 = scipy.linalg.solve(A11.todense(), RHS1)
+        X1 = np.linalg.solve(A11.todense(), RHS1)
 
         RHS2 = B2 - A21 @ X1 - A23 @ X3
         if yita == 1:
             # X2 = scipy.sparse.linalg.spsolve(A22, RHS2)
-            X2 = scipy.linalg.solve(A22.todense(), RHS2)
+            X2 = np.linalg.solve(A22.todense(), RHS2)
         else:
             X2 = 0 * RHS2
         R3 = B3 - A31 @ X1 - yita * A32 @ X2
