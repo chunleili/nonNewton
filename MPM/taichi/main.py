@@ -318,6 +318,7 @@ def main():
     avg_massA2 = np.array(massA2_time_list).mean()
     avg_step = np.array(step_time_list).mean()
     program_end_time = time()
+    print("Initialization time used: ", loop_start_time - program_start_time)
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
     if record_time and record_detail_time:
