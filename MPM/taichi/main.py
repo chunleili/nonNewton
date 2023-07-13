@@ -32,13 +32,15 @@ def main():
     parser.add_argument("--save_results", type=int, default=0)
     parser.add_argument("--enable_plot", type=int, default=0)
     parser.add_argument("--num_steps", type=int, default=200)
-    parser.add_argument("--save_time", type=int, default=1)
+    parser.add_argument("--record_time", type=int, default=1)
+    parser.add_argument("--record_detail_time", type=int, default=0)
     args = parser.parse_args()
     save_results = args.save_results
     enable_plot = args.enable_plot
     num_steps = args.num_steps
-    save_time = args.save_time
-    if save_results or save_time:
+    record_time = args.record_time
+    record_detail_time = args.record_detail_time
+    if save_results or record_time:
         if not os.path.exists("results"):
             os.makedirs("results")
     program_start_time = time()
@@ -181,17 +183,20 @@ def main():
     print(f"Initialization done.\nInitialzation time used {loop_start_time-program_start_time:.2f}s")
     xp_saved = []
     while step < num_steps:
-        step_start_time = time()
+        if record_time:
+            step_start_time = time()
         # -------------------------------- Map to grid ------------------------------- #
         [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
-        logging.info(f"natcoords: {time()-step_start_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"natcoords: {time()-step_start_time}")
+            last_time = time()
 
         # ---------------------------------- P2G ---------------------------------- #
         [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
-        logging.info(f"P2G: {time()-last_time}")
-        P2G_time_list.append(time() - last_time)
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"P2G: {time()-last_time}")
+            P2G_time_list.append(time() - last_time)
+            last_time = time()
 
         for i in range(len(NBCv)):
             if vnew[NBCv[i]] < 0:
@@ -201,14 +206,16 @@ def main():
 
         # ---------------------------------- Hstar ---------------------------------- #
         [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
-        logging.info(f"Hstar: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Hstar: {time()-last_time}")
+            last_time = time()
 
         # ---------------------------------- massA2 ---------------------------------- #
         Mf = massA2(dx, Ng, Ne, icon, f, We, dt)
-        logging.info(f"massA2: {time()-last_time}")
-        massA2_time_list.append(time() - last_time)
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"massA2: {time()-last_time}")
+            massA2_time_list.append(time() - last_time)
+            last_time = time()
 
         # ----------------------------- Matrix_reduction ----------------------------- #
         NBC = np.where(nn <= 0)[0]  # NBC: non particle nodes, NBS: free surface nodes
@@ -226,8 +233,9 @@ def main():
         zk = np.zeros((nk, nk))
         [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
         [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
-        logging.info(f"Matrix_reduction: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Matrix_reduction: {time()-last_time}")
+            last_time = time()
 
         ## ==========Free Surface================
         Gnx = dxm @ Nk
@@ -242,8 +250,9 @@ def main():
         X10 = beta / Re * G1 @ vk
         X20 = Tk
         X30 = pk.flatten()
-        logging.info(f"Free Surface: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Free Surface: {time()-last_time}")
+            last_time = time()
 
         ## ===========Solve ============
         [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3] = SolveAssemble(
@@ -252,8 +261,9 @@ def main():
         [X1, X2, X3] = SolveEuler(
             X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita
         )
-        logging.info(f"Solve: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Solve: {time()-last_time}")
+            last_time = time()
 
         ## ==========Results Reterive====
         zn = np.zeros((Ng, nk))
@@ -263,28 +273,34 @@ def main():
         deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
         vtilda = vnew + deltV
         vnew = vtilda
-        logging.info(f"Results Reterive: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Results Reterive: {time()-last_time}")
+            last_time = time()
 
         ## ==========Boundary Condition==========
         for i in range(len(NBCv)):
             if vnew[NBCv[i]] < 0:
                 vnew[NBCv[i]] = VBC[NBCv[i]]
-        logging.info(f"Boundary Condition: {time()-last_time}")
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Boundary Condition: {time()-last_time}")
+            last_time = time()
 
         ## ===== Grids to Particles=============
         [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
         v = vnew
-        logging.info(f"Grids to Particles(RK4): {time()-last_time}")
-        RK4_time_list.append(time() - last_time)
-        last_time = time()
+        if record_time and record_detail_time:
+            logging.info(f"Grids to Particles(RK4): {time()-last_time}")
+            RK4_time_list.append(time() - last_time)
+            last_time = time()
 
         ## ====Plot======
-        step_end_time = time()
-        step_time = step_end_time - step_start_time
-        step_time_list.append(step_time)
-        print(f"---\nstep: {step}, time: {(step_time)}")
+        if record_time:
+            step_end_time = time()
+            step_time = step_end_time - step_start_time
+            step_time_list.append(step_time)
+            print(f"---\nstep: {step}, time: {(step_time)}")
+        else:
+            print(f"---\nstep: {step}")
         if enable_plot:
             plot_step(xp)
         if save_results:
@@ -292,7 +308,7 @@ def main():
             np.savetxt(f"results/xp_{step}.txt", xp)
         step += 1
 
-    if save_time:
+    if record_time:
         np.savetxt("results/P2G_time.txt", np.array(P2G_time_list))
         np.savetxt("results/RK4_time.txt", np.array(RK4_time_list))
         np.savetxt("results/step_time.txt", np.array(step_time_list))
@@ -304,9 +320,10 @@ def main():
     program_end_time = time()
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
-    print("average P2G time used: ", avg_P2g)
-    print("average RK4 time used: ", avg_RK4)
-    print("average massA2 time used: ", avg_massA2)
+    if record_time and record_detail_time:
+        print("average P2G time used: ", avg_P2g)
+        print("average RK4 time used: ", avg_RK4)
+        print("average massA2 time used: ", avg_massA2)
     print("average step time used: ", avg_step)
 
 
