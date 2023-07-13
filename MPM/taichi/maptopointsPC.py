@@ -130,7 +130,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     k4 = ti.ndarray(dtype=ti.math.vec3, shape=(Np))
 
     ## RK4
-    start_t = time()
+    # start_t = time()
     maptopointsPC_kernel(
         Np,
         icon_ti,
@@ -167,10 +167,10 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     pp = pp.to_numpy()
     Tp = Tp.to_numpy()
     xpn = xpn_ti.to_numpy().T
-    end_t = time()
-    RK4_time = end_t - start_t
-    print("RK4: ", RK4_time)
-    return xp, vp, Tp, pp, RK4_time
+    # end_t = time()
+    # RK4_time = end_t - start_t
+    # print("RK4: ", RK4_time)
+    return xp, vp, Tp, pp
 
 
 @ti.func
