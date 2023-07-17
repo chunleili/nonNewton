@@ -7,7 +7,7 @@ from natcoords import natcoords, natcoords_func
 from shape3D import shape3D, shape3D_func
 
 
-def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
+def maptopointsPC_np(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
     # get natural coordinates of particles within cell
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
     nep = nep.flatten()
@@ -97,7 +97,6 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
 def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g):
     # get natural coordinates of particles within cell
     [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
-    nep = nep.flatten()
 
     vnew = np.vstack([vnew[0:Ng], vnew[Ng : 2 * Ng], vnew[2 * Ng : 3 * Ng]]).T
     v = np.vstack([v[0:Ng], v[Ng : 2 * Ng], v[2 * Ng : 3 * Ng]]).T
@@ -157,16 +156,16 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
         k3,
         k4,
     )
-    k1 = k1.to_numpy().T
-    k2 = k2.to_numpy().T
-    k3 = k3.to_numpy().T
-    k4 = k4.to_numpy().T
+    # k1 = k1.to_numpy().T
+    # k2 = k2.to_numpy().T
+    # k3 = k3.to_numpy().T
+    # k4 = k4.to_numpy().T
+    # xpF = xpF.to_numpy().T
     xp = xp_ti.to_numpy()
-    xpF = xpF.to_numpy().T
     vp = vp_ti.to_numpy()
     pp = pp.to_numpy()
     Tp = Tp.to_numpy()
-    xpn = xpn_ti.to_numpy().T
+    # xpn = xpn_ti.to_numpy().T
     # end_t = time()
     # RK4_time = end_t - start_t
     # print("RK4: ", RK4_time)

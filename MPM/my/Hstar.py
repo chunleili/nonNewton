@@ -87,7 +87,7 @@ def Hstar_kernel(
 
 def Hstar_ti(T, alf, gamma, Q0, xi, We, n, G1, vnew, Md):
     # original
-    A = Md
+    A = Md.tocsr()
     b = G1 @ vnew
     GV = scipy.sparse.linalg.spsolve(A, b)
 

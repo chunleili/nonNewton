@@ -21,9 +21,10 @@ def SolveAssemble(X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, d
     B2 = Mt @ X20 + dt * Mt @ Hk + 2 * xi * dt * G1 @ vk
     B3 = G.T @ vk
 
+    A33 = A33.tolil()
     A33[NBS, :] = 0
     for j in range(len(NBS)):
         nbs = NBS[j]
         A33[nbs, nbs] = 1
-
+    A33 = A33.tocsr()
     return A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3

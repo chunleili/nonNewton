@@ -157,8 +157,9 @@ def main():
             last_time = time()
 
         for i in range(len(NBCv)):
-            if vnew[NBCv[i]] < 0:
-                vnew[NBCv[i]] = VBC[NBCv[i]]
+            boundary_index = NBCv[i]
+            if vnew[boundary_index] < 0:
+                vnew[boundary_index] = VBC[boundary_index]
         v = vnew
         T = Tnew
 
@@ -200,9 +201,9 @@ def main():
         Gny = dym @ Nk
         Gnz = dzm @ Nk
         Gn = np.sqrt(Gnx * Gnx + Gny * Gny + Gnz * Gnz)
-        nnx = Gnx / (Gn)
-        nny = Gny / (Gn)
-        nnz = Gnz / (Gn)
+        nnx = Gnx / (Gn + 1e-8)
+        nny = Gny / (Gn + 1e-8)
+        nnz = Gnz / (Gn + 1e-8)
         NBS = np.where(Gn > 1e-8)[0]
         nd = np.hstack([nnx, nny, nnz])
         X10 = beta / Re * G1 @ vk
@@ -237,8 +238,10 @@ def main():
 
         ## ==========Boundary Condition==========
         for i in range(len(NBCv)):
-            if vnew[NBCv[i]] < 0:
-                vnew[NBCv[i]] = VBC[NBCv[i]]
+            boundary_index = NBCv[i]
+            if vnew[boundary_index] < 0:
+                vnew[boundary_index] = VBC[boundary_index]
+
         if record_time and record_detail_time:
             logging.info(f"Boundary Condition: {time()-last_time}")
             last_time = time()
