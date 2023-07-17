@@ -50,97 +50,20 @@ def main():
     massA2_time_list = []
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
-    ## ======Ordering: (1) x y loop (2) z loop
-    xe = np.arange(xa, xb + Lx, Lx).T  # xe: x position sampling
-    ye = np.arange(ya, yb + Ly, Ly).T  # ye: y position sampling
-    ze = np.arange(za, zb + Lz, Lz).T  # ze: z position sampling
-    Ix = np.ones(nx + 1)
-    Iy = np.ones(ny + 1)
-    Iz = np.ones(nz + 1)
-    xg = np.kron(Iz, np.kron(Iy, xe))
-    # xg: all nodes x position
-    yg = np.kron(Iz, np.kron(ye, Ix))
-    # yg: all nodes x position
-    zg = np.kron(ze, np.kron(Iy, Ix))
-    # yg: all nodes x position
-    ## ==================
-    xmin = np.array([xa, ya, za])
     dx = np.array([Lx, Ly, Lz])
+    xmin = np.array([xa, ya, za])
     nexyz = [nx, ny, ny]
-    Xg = np.vstack((xg, yg, zg)).T  # all nodes position
-    Vg = np.zeros((Ng, 3))
-    # velocity on the grids- vector [Vx; Vy; Vz];
     VBC = np.zeros((Ng, 3))
-    # BC value
-    ## connectivity matrix
-    icon = np.zeros((Ne, 8), dtype=int)
-    # ====first four nodes label on x-y layer======
-    for k in range(0, nz):
-        for j in range(0, ny):
-            for i in range(0, nx):
-                e = (k) * ny * nx + (j) * nx + i
-                icon[e, 0] = (k) * (nx + 1) * (ny + 1) + (j) * (nx + 1) + i + 1
-                icon[e, 1] = icon[e, 0] + 1
-                icon[e, 2] = icon[e, 1] + nx + 1
-                icon[e, 3] = icon[e, 2] - 1
-    # =====adding one x-y face total nodes to get other four nodes
-    icon[:, 4:8] = icon[:, 0:4] + (nx + 1) * (ny + 1)
 
-    # iniitalize the material point
-    nep = np.array([8, 8, 8])
-    [Np, xp, vp] = InitialParticle(nep, dx, icon, Xg, Ne)
-    Tp = np.zeros((Np, 6))
-    pp = np.zeros((Np, 1))
-    ## =========plot initial================
-    if enable_plot:
-        plot_init(Xg, icon, Ne, plot=False)
-    ## === boundary setup======================
-    # ntop = np.where(Xg[:, 2] >= 1)[0]
-    nbot = np.where(Xg[:, 2] <= 0)[0]
-    # nright = np.where(Xg[:, 0] >= 1)[0]
-    # nleft = np.where(Xg[:, 0] <= 0)[0]
-    # nfront = np.where(Xg[:, 1] <= 0)[0]
-    # nback = np.where(Xg[:, 1] >= 1)[0]
+    icon, NBCv, G10, Mt0, Gx, Gy, Gz, M, xp, vp, pp, Tp = initialize(dx)
 
-    NBCv = nbot
-
-    ## =============Assemble Matrix============
-    [M, K, Gx, Gy, Gz] = FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz)
-
-    zer = np.zeros(shape=Gx.shape)
-
-    # # Gradient of Velocity
-    G10 = scipy.sparse.bmat(
-        [
-            [Gx, zer, zer],
-            [zer, Gy, zer],
-            [zer, zer, Gz],
-            [0.5 * Gy, 0.5 * Gx, zer],
-            [0.5 * Gz, zer, 0.5 * Gx],
-            [zer, 0.5 * Gz, 0.5 * Gy],
-        ]
-    )
-    # # Gradient of P
-    G20 = scipy.sparse.bmat([[Gx, Gy, Gz]])
-    # # Divergence of stress
-    G30 = scipy.sparse.bmat([[Gx, zer, zer, Gy, Gz, zer], [zer, Gy, zer, Gz, zer, Gx], [zer, zer, Gz, zer, Gx, Gy]])
-
-    # mass matrix
-    Mu0 = scipy.sparse.block_diag([M, M, M])
-    Mt0 = scipy.sparse.block_diag([M, M, M, M, M, M])
-    Mu = np.sum(Mu0, axis=1)
-    Mu = np.squeeze(np.asarray(Mu))
-    inv_Mu = 1.0 / Mu[:]
-    dMu = scipy.sparse.diags(inv_Mu)
-    Mt0 = scipy.sparse.diags(np.squeeze(np.asarray(np.sum(Mt0, axis=1))))
-
-    p = np.zeros((Np, 1))
+    Np = xp.shape[0]
     vp[:, 2] = v0
-    step = 0
+
+    step_num = 0
     loop_start_time = time()
     print(f"Initialization done.\nInitialzation time used {loop_start_time-program_start_time:.2f}s")
-    xp_saved = []
-    while step < num_steps:
+    while step_num < num_steps:
         if record_time:
             step_start_time = time()
         # -------------------------------- Map to grid ------------------------------- #
@@ -259,15 +182,15 @@ def main():
             step_end_time = time()
             step_time = step_end_time - step_start_time
             step_time_list.append(step_time)
-            print(f"---\nstep: {step}, time: {(step_time)}")
+            print(f"---\nstep: {step_num}, time: {(step_time)}")
         else:
-            print(f"---\nstep: {step}")
+            print(f"---\nstep: {step_num}")
         if enable_plot:
             plot_step(xp)
         if save_results:
             # xp_saved.append(xp)
-            np.savetxt(f"results/xp_{step}.txt", xp)
-        step += 1
+            np.savetxt(f"results/xp_{step_num}.txt", xp)
+        step_num += 1
 
     if record_time:
         np.savetxt("results/P2G_time.txt", np.array(P2G_time_list))
@@ -317,6 +240,89 @@ def plot_init(Xg, icon, Ne, plot=True):
         id = np.append(id, id[0])
         ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
     plt.show()
+
+
+def initialize(dx):
+    ## ======Ordering: (1) x y loop (2) z loop
+    xe = np.arange(xa, xb + Lx, Lx).T  # xe: x position sampling
+    ye = np.arange(ya, yb + Ly, Ly).T  # ye: y position sampling
+    ze = np.arange(za, zb + Lz, Lz).T  # ze: z position sampling
+    Ix = np.ones(nx + 1)
+    Iy = np.ones(ny + 1)
+    Iz = np.ones(nz + 1)
+    xg = np.kron(Iz, np.kron(Iy, xe))
+    # xg: all nodes x position
+    yg = np.kron(Iz, np.kron(ye, Ix))
+    # yg: all nodes x position
+    zg = np.kron(ze, np.kron(Iy, Ix))
+    # yg: all nodes x position
+    ## ==================
+
+    Xg = np.vstack((xg, yg, zg)).T  # all nodes position
+    # Vg = np.zeros((Ng, 3))
+    # velocity on the grids- vector [Vx; Vy; Vz];
+    # BC value
+    ## connectivity matrix
+    icon = np.zeros((Ne, 8), dtype=int)
+    # ====first four nodes label on x-y layer======
+    for k in range(0, nz):
+        for j in range(0, ny):
+            for i in range(0, nx):
+                e = (k) * ny * nx + (j) * nx + i
+                icon[e, 0] = (k) * (nx + 1) * (ny + 1) + (j) * (nx + 1) + i + 1
+                icon[e, 1] = icon[e, 0] + 1
+                icon[e, 2] = icon[e, 1] + nx + 1
+                icon[e, 3] = icon[e, 2] - 1
+    # =====adding one x-y face total nodes to get other four nodes
+    icon[:, 4:8] = icon[:, 0:4] + (nx + 1) * (ny + 1)
+
+    # iniitalize the material point
+    nep = np.array([8, 8, 8])
+    [Np, xp, vp] = InitialParticle(nep, dx, icon, Xg, Ne)
+    Tp = np.zeros((Np, 6))
+    pp = np.zeros((Np))
+    ## =========plot initial================
+    plot_init(Xg, icon, Ne, plot=False)
+    ## === boundary setup======================
+    # ntop = np.where(Xg[:, 2] >= 1)[0]
+    nbot = np.where(Xg[:, 2] <= 0)[0]
+    # nright = np.where(Xg[:, 0] >= 1)[0]
+    # nleft = np.where(Xg[:, 0] <= 0)[0]
+    # nfront = np.where(Xg[:, 1] <= 0)[0]
+    # nback = np.where(Xg[:, 1] >= 1)[0]
+
+    NBCv = nbot
+
+    ## =============Assemble Matrix============
+    [M, K, Gx, Gy, Gz] = FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz)
+
+    zer = np.zeros(shape=Gx.shape)
+    # Gradient of Velocity
+    G10 = scipy.sparse.bmat(
+        [
+            [Gx, zer, zer],
+            [zer, Gy, zer],
+            [zer, zer, Gz],
+            [0.5 * Gy, 0.5 * Gx, zer],
+            [0.5 * Gz, zer, 0.5 * Gx],
+            [zer, 0.5 * Gz, 0.5 * Gy],
+        ]
+    )
+    # # Gradient of P
+    G20 = scipy.sparse.bmat([[Gx, Gy, Gz]])
+    # # Divergence of stress
+    G30 = scipy.sparse.bmat([[Gx, zer, zer, Gy, Gz, zer], [zer, Gy, zer, Gz, zer, Gx], [zer, zer, Gz, zer, Gx, Gy]])
+
+    # mass matrix
+    Mu0 = scipy.sparse.block_diag([M, M, M])
+    Mt0 = scipy.sparse.block_diag([M, M, M, M, M, M])
+    Mu = np.sum(Mu0, axis=1)
+    Mu = np.squeeze(np.asarray(Mu))
+    inv_Mu = 1.0 / Mu[:]
+    dMu = scipy.sparse.diags(inv_Mu)
+    Mt0 = scipy.sparse.diags(np.squeeze(np.asarray(np.sum(Mt0, axis=1))))
+
+    return icon, NBCv, G10, Mt0, Gx, Gy, Gz, M, xp, vp, pp, Tp
 
 
 if __name__ == "__main__":

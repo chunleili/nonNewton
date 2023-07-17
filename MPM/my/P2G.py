@@ -94,7 +94,7 @@ def P2G(Ng, icon, xpn, nep, n_p, vp, pp, Tp):
     vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[0]))
     vp_ti.from_numpy(vp)
     pp_ti = ti.ndarray(dtype=ti.f32, shape=(pp.shape[0]))
-    pp_ti.from_numpy(pp.flatten())
+    pp_ti.from_numpy(pp)
     Tp_ti = ti.ndarray(dtype=vec6, shape=(Tp.shape[0]))
     Tp_ti.from_numpy(Tp)
 
