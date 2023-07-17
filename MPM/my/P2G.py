@@ -77,7 +77,6 @@ def P2G(Ng, icon, xpn, nep, n_p, vp, pp, Tp):
     v = np.zeros((Ng, 3))
 
     #  map velocities to grid
-    nep = nep.flatten()
 
     # taichi variables
     ivec8 = ti.types.vector(8, int)
@@ -90,8 +89,8 @@ def P2G(Ng, icon, xpn, nep, n_p, vp, pp, Tp):
 
     icon_ti = ti.ndarray(dtype=ivec8, shape=(icon.shape[0]))
     icon_ti.from_numpy(icon)
-    xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xpn.shape[1]))
-    xpn_ti.from_numpy(xpn.T)
+    xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xpn.shape[0]))
+    xpn_ti.from_numpy(xpn)
     vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[0]))
     vp_ti.from_numpy(vp)
     pp_ti = ti.ndarray(dtype=ti.f32, shape=(pp.shape[0]))

@@ -95,12 +95,12 @@ def main():
     if enable_plot:
         plot_init(Xg, icon, Ne, plot=False)
     ## === boundary setup======================
-    ntop = np.where(Xg[:, 2] >= 1)[0]
+    # ntop = np.where(Xg[:, 2] >= 1)[0]
     nbot = np.where(Xg[:, 2] <= 0)[0]
-    nright = np.where(Xg[:, 0] >= 1)[0]
-    nleft = np.where(Xg[:, 0] <= 0)[0]
-    nfront = np.where(Xg[:, 1] <= 0)[0]
-    nback = np.where(Xg[:, 1] >= 1)[0]
+    # nright = np.where(Xg[:, 0] >= 1)[0]
+    # nleft = np.where(Xg[:, 0] <= 0)[0]
+    # nfront = np.where(Xg[:, 1] <= 0)[0]
+    # nback = np.where(Xg[:, 1] >= 1)[0]
 
     NBCv = nbot + 2 * Ng
 

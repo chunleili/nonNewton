@@ -33,8 +33,8 @@ def natcoords_ti(xp, dx, xmin, ne):
     natcoords_kernel(xp_ti, dx_ti, xmin_ti, ne_ti, nep_ti, xpn_ti, n_p)
 
     # copy back
-    xpn = xpn_ti.to_numpy().reshape(3, n_p)
-    nep = nep_ti.to_numpy().reshape(1, n_p)
+    xpn = xpn_ti.to_numpy()
+    nep = nep_ti.to_numpy()
     return xpn, nep
 
 

@@ -88,7 +88,7 @@ def Hstar_kernel(
 def Hstar_ti(T, alf, gamma, Q0, xi, We, n, G1, vnew, Md):
     # original
     A = Md
-    b = (G1 @ vnew).reshape(-1, 1)
+    b = G1 @ vnew
     GV = scipy.sparse.linalg.spsolve(A, b)
 
     # taichi variables
@@ -102,8 +102,8 @@ def Hstar_ti(T, alf, gamma, Q0, xi, We, n, G1, vnew, Md):
 
     Hstar_kernel(T_ti, GV_ti, H_ti, f_ti, alf, gamma, Q0, xi, We, n)
 
-    H = H_ti.to_numpy().reshape(-1, 1)
-    f = f_ti.to_numpy().reshape(-1, 1)
+    H = H_ti.to_numpy()
+    f = f_ti.to_numpy()
 
     return H, f
 
