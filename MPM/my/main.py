@@ -68,9 +68,9 @@ def main():
     dx = np.array([Lx, Ly, Lz])
     nexyz = [nx, ny, ny]
     Xg = np.vstack((xg, yg, zg)).T  # all nodes position
-    Vg = np.zeros((3 * Ng, 1))
+    Vg = np.zeros((Ng, 3))
     # velocity on the grids- vector [Vx; Vy; Vz];
-    VBC = 0 * Vg
+    VBC = np.zeros((Ng, 3))
     # BC value
     ## connectivity matrix
     icon = np.zeros((Ne, 8), dtype=int)
@@ -102,7 +102,7 @@ def main():
     # nfront = np.where(Xg[:, 1] <= 0)[0]
     # nback = np.where(Xg[:, 1] >= 1)[0]
 
-    NBCv = nbot + 2 * Ng
+    NBCv = nbot
 
     ## =============Assemble Matrix============
     [M, K, Gx, Gy, Gz] = FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz)
@@ -157,8 +157,8 @@ def main():
             last_time = time()
 
         for i in range(len(NBCv)):
-            boundary_index = NBCv[i]
-            if vnew[boundary_index] < 0:
+            boundary_index = NBCv[i].item()
+            if vnew[boundary_index][2] < 0:
                 vnew[boundary_index] = VBC[boundary_index]
         v = vnew
         T = Tnew
@@ -230,8 +230,8 @@ def main():
         p = Phi @ X3
         dV = dMu @ (beta / Re * D @ X1 + D @ X2 - G @ X3) * dt
         deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
-        vtilda = vnew + deltV
-        vnew = vtilda
+        vtilda = vnew.flatten() + deltV
+        vnew = vtilda.reshape((Ng, 3))
         if record_time and record_detail_time:
             logging.info(f"Results Reterive: {time()-last_time}")
             last_time = time()
@@ -239,7 +239,7 @@ def main():
         ## ==========Boundary Condition==========
         for i in range(len(NBCv)):
             boundary_index = NBCv[i]
-            if vnew[boundary_index] < 0:
+            if vnew[boundary_index][2] < 0:
                 vnew[boundary_index] = VBC[boundary_index]
 
         if record_time and record_detail_time:

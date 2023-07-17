@@ -140,7 +140,7 @@ def P2G(Ng, icon, xpn, nep, n_p, vp, pp, Tp):
     Tv[index0, 4] = 0
     Tv[index0, 5] = 0
 
-    v = np.hstack([v[:, 0], v[:, 1], v[:, 2]]).T
+    # v = np.hstack([v[:, 0], v[:, 1], v[:, 2]]).T
     T1 = np.hstack([Tv[:, 0], Tv[:, 1], Tv[:, 2], Tv[:, 3], Tv[:, 4], Tv[:, 5]]).T
 
     return mv, v, T1, p, nn
