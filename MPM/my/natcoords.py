@@ -19,13 +19,13 @@ def natcoords_np(xp, dx, xmin, ne):
 
 def natcoords_ti(xp, dx, xmin, ne):
     # new var
-    n_p = xp.shape[1]
+    n_p = xp.shape[0]
     nep_ti = ti.ndarray(dtype=ti.i32, shape=(n_p))
     xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(n_p))
 
     # old var
     xp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(n_p))
-    xp_ti.from_numpy(xp.T)
+    xp_ti.from_numpy(xp)
     dx_ti = ti.math.vec3(dx)
     xmin_ti = ti.math.vec3(xmin)
     ne_ti = ti.math.ivec3(ne)

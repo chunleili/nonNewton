@@ -10,10 +10,18 @@
             "args": [ ]
         },
         {
-            "name": "调试MPM",
+            "name": "调试MPM taichi",
             "type": "python",
             "request": "launch",
             "program": "MPM/taichi/main.py",
+            "console": "integratedTerminal",
+            "args": [ ]
+        },
+        {
+            "name": "调试MPM my",
+            "type": "python",
+            "request": "launch",
+            "program": "MPM/my/main.py",
             "console": "integratedTerminal",
             "args": [ ]
         },

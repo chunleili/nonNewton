@@ -29,7 +29,7 @@ def main():
     # problem inputs
     ## ====plotting and saving====
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_results", type=int, default=0)
+    parser.add_argument("--save_results", type=int, default=1)
     parser.add_argument("--enable_plot", type=int, default=1)
     parser.add_argument("--num_steps", type=int, default=200)
     parser.add_argument("--record_time", type=int, default=1)
@@ -333,7 +333,7 @@ def plot_step(xp, plot=True):
         return
     plt.ion()
     ax = plt.axes(projection="3d")
-    ax.scatter(xp[0, :], xp[1, :], xp[2, :], c="b")
+    ax.scatter(xp[:, 0], xp[:, 1], xp[:, 2], c="b")
     ax.set_xlim(0.2, 0.8)
     ax.set_ylim(0.2, 0.8)
     ax.set_zlim(0, 0.3)

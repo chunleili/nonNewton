@@ -4,7 +4,7 @@ import taichi as ti
 from shape3D import shape3D, shape3D_func
 
 
-def InitialParticle(npe, dx, icon, Xg, Ne):
+def InitialParticle_np(npe, dx, icon, Xg, Ne):
     wt = 2.0 / npe[:]
     xp = []
     vp = []
@@ -33,7 +33,7 @@ def InitialParticle(npe, dx, icon, Xg, Ne):
     wt_ = ti.Vector([wt[0], wt[1], wt[2]])
     num_p = InitialParticle_kernel(npe, dx, icon, Xg, Ne, wt_, xp, vp)
     xp = xp.to_numpy()
-    xp = xp[:num_p].T
+    xp = xp[:num_p]
     vp = vp.to_numpy()
     vp = vp[:num_p].T
     return num_p, xp, vp
