@@ -4,18 +4,18 @@ import scipy
 
 def full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk):
     # Gradient of Velocity
-    l1 = scipy.sparse.hstack([dxm, zk, zk])
-    l2 = scipy.sparse.hstack([zk, dym, zk])
-    l3 = scipy.sparse.hstack([zk, zk, dzm])
-    l4 = scipy.sparse.hstack([0.5 * dym, 0.5 * dxm, zk])
-    l5 = scipy.sparse.hstack([0.5 * dzm, zk, 0.5 * dxm])
-    l6 = scipy.sparse.hstack([zk, 0.5 * dzm, 0.5 * dym])
-    G1 = scipy.sparse.vstack([l1, l2, l3, l4, l5, l6])
+    G1 = scipy.sparse.bmat(
+        [
+            [dxm, zk, zk],
+            [zk, dym, zk],
+            [zk, zk, dzm],
+            [0.5 * dym, 0.5 * dxm, zk],
+            [0.5 * dzm, zk, 0.5 * dxm],
+            [zk, 0.5 * dzm, 0.5 * dym],
+        ]
+    )
     # Divergence of stress
-    l1 = scipy.sparse.hstack([dxm, zk, zk, dym, dzm, zk])
-    l2 = scipy.sparse.hstack([zk, dym, zk, dzm, zk, dxm])
-    l3 = scipy.sparse.hstack([zk, zk, dzm, zk, dxm, dym])
-    D = scipy.sparse.vstack([l1, l2, l3])
+    D = scipy.sparse.bmat([[dxm, zk, zk, dym, dzm, zk], [zk, dym, zk, dzm, zk, dxm], [zk, zk, dzm, zk, dxm, dym]])
     # Gradient of P
     G = scipy.sparse.vstack([dxm, dym, dzm])
     # Mass matrix

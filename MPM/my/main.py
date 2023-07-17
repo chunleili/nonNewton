@@ -109,21 +109,21 @@ def main():
 
     zer = np.zeros(shape=Gx.shape)
 
-    # Gradient of Velocity
-    l1 = scipy.sparse.hstack([Gx, zer, zer])
-    l2 = scipy.sparse.hstack([zer, Gy, zer])
-    l3 = scipy.sparse.hstack([zer, zer, Gz])
-    l4 = scipy.sparse.hstack([0.5 * Gy, 0.5 * Gx, zer])
-    l5 = scipy.sparse.hstack([0.5 * Gz, zer, 0.5 * Gx])
-    l6 = scipy.sparse.hstack([zer, 0.5 * Gz, 0.5 * Gy])
-    G10 = scipy.sparse.vstack([l1, l2, l3, l4, l5, l6])
-    # Gradient of P
-    G20 = scipy.sparse.vstack([Gx, Gy, Gz])
-    # Divergence of stress
-    l1 = scipy.sparse.hstack([Gx, zer, zer, Gy, Gz, zer])
-    l2 = scipy.sparse.hstack([zer, Gy, zer, Gz, zer, Gx])
-    l3 = scipy.sparse.hstack([zer, zer, Gz, zer, Gx, Gy])
-    G30 = scipy.sparse.vstack([l1, l2, l3])
+    # # Gradient of Velocity
+    G10 = scipy.sparse.bmat(
+        [
+            [Gx, zer, zer],
+            [zer, Gy, zer],
+            [zer, zer, Gz],
+            [0.5 * Gy, 0.5 * Gx, zer],
+            [0.5 * Gz, zer, 0.5 * Gx],
+            [zer, 0.5 * Gz, 0.5 * Gy],
+        ]
+    )
+    # # Gradient of P
+    G20 = scipy.sparse.bmat([[Gx, Gy, Gz]])
+    # # Divergence of stress
+    G30 = scipy.sparse.bmat([[Gx, zer, zer, Gy, Gz, zer], [zer, Gy, zer, Gz, zer, Gx], [zer, zer, Gz, zer, Gx, Gy]])
 
     # mass matrix
     Mu0 = scipy.sparse.block_diag([M, M, M])
