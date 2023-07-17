@@ -51,7 +51,8 @@ def massA2_ti(dx, Ng, Ne, icon, F, We, dt):
     Lx = dx[0]
     Ly = dx[1]
     Lz = dx[2]
-    C = np.zeros((Ng, Ng))
+    # C = np.zeros((Ng, Ng))
+    C_dia = np.zeros(shape=(Ng))
     # Npt*Np on all elements
     Me = (
         np.array(
@@ -76,16 +77,10 @@ def massA2_ti(dx, Ng, Ne, icon, F, We, dt):
     ivec8 = ti.types.vector(8, ti.i32)
     icon_ti = ti.ndarray(dtype=ivec8, shape=(Ne))
     icon_ti.from_numpy(icon)
-    massA2_kernel(icon_ti, F, We, dt, Ne, Me, C)
+    massA2_kernel(icon_ti, F, We, dt, Ne, Me, C_dia)
 
-    C = scipy.sparse.dia_matrix(C)
-    # z = np.zeros((Ng, Ng))
-    # l1 = scipy.sparse.hstack([C, z, z, z, z, z])
-    # l2 = scipy.sparse.hstack([z, C, z, z, z, z])
-    # l3 = scipy.sparse.hstack([z, z, C, z, z, z])
-    # l4 = scipy.sparse.hstack([z, z, z, C, z, z])
-    # l5 = scipy.sparse.hstack([z, z, z, z, z, C])
-    # M = scipy.sparse.vstack([l1, l2, l3, l4, l5])
+    C = scipy.sparse.diags(C_dia)
+
     return C
 
 
@@ -97,7 +92,7 @@ def massA2_kernel(
     dt: ti.f32,
     Ne: ti.i32,
     Me: ti.types.ndarray(),
-    C: ti.types.ndarray(),
+    C_dia: ti.types.ndarray(),
 ):
     for i in range(Ne):
         nodes = icon[i] - 1
@@ -119,7 +114,7 @@ def massA2_kernel(
         )
 
         for dim in ti.static(range(8)):
-            C[nodes[dim], nodes[dim]] += f * Me[dim, dim]
+            C_dia[nodes[dim]] += f * Me[dim, dim]
 
 
 def massA2(dx, Ng, Ne, icon, F, We, dt):

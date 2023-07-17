@@ -3,11 +3,11 @@ from scipy import sparse
 
 
 def FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz):
-    M = np.zeros((Ng, Ng))
-    K = np.zeros((Ng, Ng))
-    Gx = np.zeros((Ng, Ng))
-    Gy = np.zeros((Ng, Ng))
-    Gz = np.zeros((Ng, Ng))
+    M = sparse.lil_matrix((Ng, Ng))
+    K = sparse.lil_matrix((Ng, Ng))
+    Gx = sparse.lil_matrix((Ng, Ng))
+    Gy = sparse.lil_matrix((Ng, Ng))
+    Gz = sparse.lil_matrix((Ng, Ng))
 
     Me = (
         np.array(

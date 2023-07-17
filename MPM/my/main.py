@@ -296,7 +296,8 @@ def initialize(dx):
     ## =============Assemble Matrix============
     [M, K, Gx, Gy, Gz] = FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz)
 
-    zer = np.zeros(shape=Gx.shape)
+    # zer = np.zeros(shape=Gx.shape)
+    zer = scipy.sparse.csr_matrix(Gx.shape)
     # Gradient of Velocity
     G10 = scipy.sparse.bmat(
         [
