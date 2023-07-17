@@ -30,7 +30,7 @@ def main():
     ## ====plotting and saving====
     parser = argparse.ArgumentParser()
     parser.add_argument("--save_results", type=int, default=0)
-    parser.add_argument("--enable_plot", type=int, default=0)
+    parser.add_argument("--enable_plot", type=int, default=1)
     parser.add_argument("--num_steps", type=int, default=200)
     parser.add_argument("--record_time", type=int, default=1)
     parser.add_argument("--record_detail_time", type=int, default=0)
@@ -115,18 +115,18 @@ def main():
     VBC = 0 * Vg
     # BC value
     ## connectivity matrix
-    icon = np.zeros((8, Ne), dtype=int)
+    icon = np.zeros((Ne, 8), dtype=int)
     # ====first four nodes label on x-y layer======
     for k in range(0, nz):
         for j in range(0, ny):
             for i in range(0, nx):
                 e = (k) * ny * nx + (j) * nx + i
-                icon[0, e] = (k) * (nx + 1) * (ny + 1) + (j) * (nx + 1) + i + 1
-                icon[1, e] = icon[0, e] + 1
-                icon[2, e] = icon[1, e] + nx + 1
-                icon[3, e] = icon[2, e] - 1
+                icon[e, 0] = (k) * (nx + 1) * (ny + 1) + (j) * (nx + 1) + i + 1
+                icon[e, 1] = icon[e, 0] + 1
+                icon[e, 2] = icon[e, 1] + nx + 1
+                icon[e, 3] = icon[e, 2] - 1
     # =====adding one x-y face total nodes to get other four nodes
-    icon[4:8, :] = icon[0:4, :] + (nx + 1) * (ny + 1)
+    icon[:, 4:8] = icon[:, 0:4] + (nx + 1) * (ny + 1)
 
     # iniitalize the material point
     nep = np.array([8, 8, 8])
@@ -352,7 +352,7 @@ def plot_init(Xg, icon, Ne, plot=True):
     plt.figure(num="Initial mesh grid and mp")
     ax = plt.axes(projection="3d")
     for j in range(Ne):
-        id = icon[:, j]
+        id = icon[j, :]
         id = np.append(id, id[0])
         ax.scatter(Xg[id - 1, 0], Xg[id - 1, 1], Xg[id - 1, 2], c="r", s=1)
     plt.show()

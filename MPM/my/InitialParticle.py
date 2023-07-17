@@ -75,7 +75,7 @@ def InitialParticle_kernel(
 
 @ti.func
 def get_col(icon: ti.template(), i: int):
-    return ti.Vector([icon[0, i], icon[1, i], icon[2, i], icon[3, i], icon[4, i], icon[5, i], icon[6, i], icon[7, i]])
+    return ti.Vector([icon[i, 0], icon[i, 1], icon[i, 2], icon[i, 3], icon[i, 4], icon[i, 5], icon[i, 6], icon[i, 7]])
 
 
 @ti.func

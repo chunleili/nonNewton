@@ -2,7 +2,7 @@ import numpy as np
 from scipy import sparse
 
 
-def FEMmatrix3D(Ne, Ng, con, Lx, Ly, Lz):
+def FEMmatrix3D(Ne, Ng, icon, Lx, Ly, Lz):
     M = np.zeros((Ng, Ng))
     K = np.zeros((Ng, Ng))
     Gx = np.zeros((Ng, Ng))
@@ -148,7 +148,7 @@ def FEMmatrix3D(Ne, Ng, con, Lx, Ly, Lz):
     )
 
     for h in range(Ne):
-        id = con[:, h] - 1
+        id = icon[h, :] - 1
         for i in range(len(id)):
             for j in range(len(id)):
                 if id[i] < Ng and id[j] < Ng:

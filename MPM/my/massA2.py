@@ -75,7 +75,7 @@ def massA2_ti(dx, Ng, Ne, icon, F, We, dt):
 
     ivec8 = ti.types.vector(8, ti.i32)
     icon_ti = ti.ndarray(dtype=ivec8, shape=(Ne))
-    icon_ti.from_numpy(icon.T)
+    icon_ti.from_numpy(icon)
     massA2_kernel(icon_ti, F.flatten(), We, dt, Ne, Me, C)
 
     C = scipy.sparse.dia_matrix(C)
