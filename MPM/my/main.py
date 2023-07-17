@@ -177,7 +177,7 @@ def main():
     Mt0 = scipy.sparse.diags(np.squeeze(np.asarray(np.sum(Mt0, axis=1))))
 
     p = np.zeros((Np, 1))
-    vp[2, :] = v0
+    vp[:, 2] = v0
     step = 0
     loop_start_time = time()
     print(f"Initialization done.\nInitialzation time used {loop_start_time-program_start_time:.2f}s")

@@ -115,8 +115,8 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     xp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xp.shape[0]))
     xp_ti.from_numpy(xp)
     dx_ti = ti.math.vec3([dx[0], dx[1], dx[2]])
-    vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[1]))
-    vp_ti.from_numpy(vp.T)
+    vp_ti = ti.ndarray(dtype=ti.math.vec3, shape=(vp.shape[0]))
+    vp_ti.from_numpy(vp)
     xpn_ti = ti.ndarray(dtype=ti.math.vec3, shape=(xp.shape[0]))
     xpn_ti.from_numpy(xpn.T)
 
@@ -163,7 +163,7 @@ def maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr,
     k4 = k4.to_numpy().T
     xp = xp_ti.to_numpy()
     xpF = xpF.to_numpy().T
-    vp = vp_ti.to_numpy().T
+    vp = vp_ti.to_numpy()
     pp = pp.to_numpy()
     Tp = Tp.to_numpy()
     xpn = xpn_ti.to_numpy().T

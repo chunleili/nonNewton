@@ -35,7 +35,7 @@ def InitialParticle(npe, dx, icon, Xg, Ne):
     xp = xp.to_numpy()
     xp = xp[:num_p]
     vp = vp.to_numpy()
-    vp = vp[:num_p].T
+    vp = vp[:num_p]
     return num_p, xp, vp
 
 
