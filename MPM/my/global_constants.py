@@ -1,3 +1,5 @@
+import numpy as np
+
 ## ====time stepping====
 dt = 1e-4
 # CFL * min(lx,ly)/1;
@@ -35,9 +37,10 @@ Ne = nx * ny * nz
 # total elemennts
 Ng = (nx + 1) * (ny + 1) * (nz + 1)
 # total nodes
-Lx = (xb - xa) / nx
-# dx
-Ly = (yb - ya) / ny
-# dy
-Lz = (zb - za) / nz
-# dz
+Lx = (xb - xa) / nx  # dx
+Ly = (yb - ya) / ny  # dy
+Lz = (zb - za) / nz  # dz
+
+dx = np.array([Lx, Ly, Lz])
+xmin = np.array([xa, ya, za])
+nexyz = np.array([nx, ny, ny])

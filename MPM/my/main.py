@@ -45,9 +45,6 @@ def main():
     # massA2_time_list = []
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
-    dx = np.array([Lx, Ly, Lz])
-    xmin = np.array([xa, ya, za])
-    nexyz = [nx, ny, ny]
     VBC = np.zeros((Ng, 3))
 
     icon, NBCv, G10, Mt0, Gx, Gy, Gz, M, xp, vp, pp, Tp = initialize(dx)
@@ -65,9 +62,6 @@ def main():
             vp,
             pp,
             Tp,
-            dx,
-            xmin,
-            nexyz,
             icon,
             Np,
             NBCv,
@@ -216,7 +210,7 @@ def initialize(dx):
     return icon, NBCv, G10, Mt0, Gx, Gy, Gz, M, xp, vp, pp, Tp
 
 
-def step(args, xp, vp, pp, Tp, dx, xmin, nexyz, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, step_time_list, step_num):
+def step(args, xp, vp, pp, Tp, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, step_time_list, step_num):
     if args.record_time:
         step_start_time = time()
     # -------------------------------- Map to grid ------------------------------- #
