@@ -29,11 +29,13 @@ def main():
     # problem inputs
     ## ====plotting and saving====
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_results", type=int, default=1)
+    parser.add_argument("--save_results", type=int, default=0)
     parser.add_argument("--enable_plot", type=int, default=1)
     parser.add_argument("--num_steps", type=int, default=200)
     parser.add_argument("--record_time", type=int, default=1)
     parser.add_argument("--record_detail_time", type=int, default=0)
+    parser.add_argument("--save_Tp", type=int, default=0)
+    parser.add_argument("--save_vp", type=int, default=0)
     args = parser.parse_args()
     if args.save_results or args.record_time:
         if not os.path.exists("results"):
@@ -337,6 +339,10 @@ def step(args, xp, vp, pp, Tp, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, ste
     if args.save_results:
         # xp_saved.append(xp)
         np.savetxt(f"results/xp_{step_num}.txt", xp)
+        if args.save_Tp:
+            np.savetxt(f"results/Tp_{step_num}.txt", Tp)
+        if args.save_vp:
+            np.savetxt(f"results/vp_{step_num}.txt", vp)
     step_num += 1
     return step_num, xp, vp, pp, Tp
 
