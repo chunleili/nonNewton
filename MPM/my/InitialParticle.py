@@ -29,9 +29,9 @@ def InitialParticle_np(npe, dx, icon, Xg, Ne):
 def InitialParticle(npe, dx, icon, Xg, Ne):
     import meshio
 
-    # m  = meshio.read("./MPM/data/raindrop.ply")
+    m = meshio.read("./MPM/data/raindrop.ply")
     # m = meshio.read("./MPM/data/torus1.ply")
-    m = meshio.read("./MPM/data/bunny.ply")
+    # m = meshio.read("./MPM/data/bunny.ply")
     xp = m.points
     num_p = len(xp)
     vp = np.zeros_like(xp)

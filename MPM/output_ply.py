@@ -5,7 +5,7 @@ is_binary = False
 
 for frame in range(num_frames):
     xp = np.loadtxt(f"results/xp_{frame}.txt")
-    xp = np.array(xp.T)
+    # xp = np.array(xp.T)
 
     num_points = xp.shape[0]
 
