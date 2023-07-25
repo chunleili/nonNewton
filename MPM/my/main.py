@@ -59,133 +59,28 @@ def main():
     loop_start_time = time()
     print(f"Initialization done.\nInitialzation time used {loop_start_time-program_start_time:.2f}s")
     while step_num < args.num_steps:
-        if args.record_time:
-            step_start_time = time()
-        # -------------------------------- Map to grid ------------------------------- #
-        [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
-        if args.record_time and args.record_detail_time:
-            logging.info(f"natcoords: {time()-step_start_time}")
-            last_time = time()
-
-        # ---------------------------------- P2G ---------------------------------- #
-        [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
-        if args.record_time and args.record_detail_time:
-            logging.info(f"P2G: {time()-last_time}")
-            # P2G_time_list.append(time() - last_time)
-            last_time = time()
-
-        for i in range(len(NBCv)):
-            boundary_index = NBCv[i].item()
-            if vnew[boundary_index][2] < 0:
-                vnew[boundary_index] = VBC[boundary_index]
-        v = vnew
-        T = Tnew
-
-        # ---------------------------------- Hstar ---------------------------------- #
-        [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Hstar: {time()-last_time}")
-            last_time = time()
-
-        # ---------------------------------- massA2 ---------------------------------- #
-        Mf = massA2(dx, Ng, Ne, icon, f, We, dt)
-        if args.record_time and args.record_detail_time:
-            logging.info(f"massA2: {time()-last_time}")
-            # massA2_time_list.append(time() - last_time)
-            last_time = time()
-
-        # ----------------------------- Matrix_reduction ----------------------------- #
-        NBC = np.where(nn <= 0)[0]  # NBC: non particle nodes, NBS: free surface nodes
-        Phi = scipy.sparse.eye(Ng)
-        keep_columns = np.ones(Phi.shape[1], dtype=bool)
-        keep_columns[NBC] = False
-        Phi_subset = Phi.tocsr()
-        Phi_subset = Phi_subset[:, keep_columns]
-        Phi = Phi_subset
-        dxm = Phi.T @ Gx @ Phi
-        dym = Phi.T @ Gy @ Phi
-        dzm = Phi.T @ Gz @ Phi
-        nk = dxm.shape[0]
-        Ck = Phi.T @ M @ Phi
-        zk = np.zeros((nk, nk))
-        [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
-        [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Matrix_reduction: {time()-last_time}")
-            last_time = time()
-
-        ## ==========Free Surface================
-        Gnx = dxm @ Nk
-        Gny = dym @ Nk
-        Gnz = dzm @ Nk
-        Gn = np.sqrt(Gnx * Gnx + Gny * Gny + Gnz * Gnz)
-        nnx = Gnx / (Gn + 1e-8)
-        nny = Gny / (Gn + 1e-8)
-        nnz = Gnz / (Gn + 1e-8)
-        NBS = np.where(Gn > 1e-8)[0]
-        nd = np.hstack([nnx, nny, nnz])
-        X10 = beta / Re * G1 @ vk
-        X20 = Tk
-        X30 = pk.flatten()
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Free Surface: {time()-last_time}")
-            last_time = time()
-
-        ## ===========Solve ============
-        [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3] = SolveAssemble(
-            X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt
+        step_num, xp, vp, pp, Tp = step(
+            args,
+            xp,
+            vp,
+            pp,
+            Tp,
+            dx,
+            xmin,
+            nexyz,
+            icon,
+            Np,
+            NBCv,
+            VBC,
+            G10,
+            Mt0,
+            Gx,
+            Gy,
+            Gz,
+            M,
+            step_time_list,
+            step_num,
         )
-        [X1, X2, X3] = SolveEuler(
-            X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita
-        )
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Solve: {time()-last_time}")
-            last_time = time()
-
-        ## ==========Results Reterive====
-        zn = np.zeros((Ng, nk))
-        Tg = scipy.sparse.block_diag([Phi, Phi, Phi, Phi, Phi, Phi]) @ X2
-        p = Phi @ X3
-        dV = dMu @ (beta / Re * D @ X1 + D @ X2 - G @ X3) * dt
-        deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
-        vtilda = vnew.flatten() + deltV
-        vnew = vtilda.reshape((Ng, 3))
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Results Reterive: {time()-last_time}")
-            last_time = time()
-
-        ## ==========Boundary Condition==========
-        for i in range(len(NBCv)):
-            boundary_index = NBCv[i]
-            if vnew[boundary_index][2] < 0:
-                vnew[boundary_index] = VBC[boundary_index]
-
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Boundary Condition: {time()-last_time}")
-            last_time = time()
-
-        ## ===== Grids to Particles=============
-        [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
-        v = vnew
-        if args.record_time and args.record_detail_time:
-            logging.info(f"Grids to Particles(RK4): {time()-last_time}")
-            # RK4_time_list.append(time() - last_time)
-            last_time = time()
-
-        ## ====Plot======
-        if args.record_time:
-            step_end_time = time()
-            step_time = step_end_time - step_start_time
-            step_time_list.append(step_time)
-            print(f"---\nstep: {step_num}, time: {(step_time)}")
-        else:
-            print(f"---\nstep: {step_num}")
-        if args.enable_plot:
-            plot_step(xp)
-        if args.save_results:
-            # xp_saved.append(xp)
-            np.savetxt(f"results/xp_{step_num}.txt", xp)
-        step_num += 1
 
     program_end_time = time()
     if args.record_time:
@@ -321,8 +216,135 @@ def initialize(dx):
     return icon, NBCv, G10, Mt0, Gx, Gy, Gz, M, xp, vp, pp, Tp
 
 
-def step():
-    pass
+def step(args, xp, vp, pp, Tp, dx, xmin, nexyz, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, step_time_list, step_num):
+    if args.record_time:
+        step_start_time = time()
+    # -------------------------------- Map to grid ------------------------------- #
+    [xpn, nep] = natcoords(xp, dx, xmin, nexyz)
+    if args.record_time and args.record_detail_time:
+        logging.info(f"natcoords: {time()-step_start_time}")
+        last_time = time()
+
+    # ---------------------------------- P2G ---------------------------------- #
+    [mv, vnew, Tnew, p, nn] = P2G(Ng, icon, xpn, nep, Np, vp, pp, Tp)
+    if args.record_time and args.record_detail_time:
+        logging.info(f"P2G: {time()-last_time}")
+        # P2G_time_list.append(time() - last_time)
+        last_time = time()
+
+    for i in range(len(NBCv)):
+        boundary_index = NBCv[i].item()
+        if vnew[boundary_index][2] < 0:
+            vnew[boundary_index] = VBC[boundary_index]
+    v = vnew
+    T = Tnew
+
+    # ---------------------------------- Hstar ---------------------------------- #
+    [Hg, f] = Hstar(T, alph, gamma, Q0, xi, We, Ng, G10, vnew, Mt0)
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Hstar: {time()-last_time}")
+        last_time = time()
+
+    # ---------------------------------- massA2 ---------------------------------- #
+    Mf = massA2(dx, Ng, Ne, icon, f, We, dt)
+    if args.record_time and args.record_detail_time:
+        logging.info(f"massA2: {time()-last_time}")
+        # massA2_time_list.append(time() - last_time)
+        last_time = time()
+
+    # ----------------------------- Matrix_reduction ----------------------------- #
+    NBC = np.where(nn <= 0)[0]  # NBC: non particle nodes, NBS: free surface nodes
+    Phi = scipy.sparse.eye(Ng)
+    keep_columns = np.ones(Phi.shape[1], dtype=bool)
+    keep_columns[NBC] = False
+    Phi_subset = Phi.tocsr()
+    Phi_subset = Phi_subset[:, keep_columns]
+    Phi = Phi_subset
+    dxm = Phi.T @ Gx @ Phi
+    dym = Phi.T @ Gy @ Phi
+    dzm = Phi.T @ Gz @ Phi
+    nk = dxm.shape[0]
+    Ck = Phi.T @ M @ Phi
+    zk = np.zeros((nk, nk))
+    [G1, D, G, Mu, Md, Mt, dMu, A22d] = full_scale_operators(dxm, dym, dzm, Ck, Mf, Phi, Re, beta, zk)
+    [Nk, vk, Hk, Tk, pk, znk] = Matrix_reduction(nn, nk, Ng, Phi, vnew, Hg, Tnew, p)
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Matrix_reduction: {time()-last_time}")
+        last_time = time()
+
+    ## ==========Free Surface================
+    Gnx = dxm @ Nk
+    Gny = dym @ Nk
+    Gnz = dzm @ Nk
+    Gn = np.sqrt(Gnx * Gnx + Gny * Gny + Gnz * Gnz)
+    nnx = Gnx / (Gn + 1e-8)
+    nny = Gny / (Gn + 1e-8)
+    nnz = Gnz / (Gn + 1e-8)
+    NBS = np.where(Gn > 1e-8)[0]
+    nd = np.hstack([nnx, nny, nnz])
+    X10 = beta / Re * G1 @ vk
+    X20 = Tk
+    X30 = pk.flatten()
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Free Surface: {time()-last_time}")
+        last_time = time()
+
+    ## ===========Solve ============
+    [A11, A12, A13, A21, A22, A23, A31, A32, A33, B1, B2, B3] = SolveAssemble(
+        X20, Hk, dMu, Mt, A22d, NBS, beta, Re, G1, D, G, xi, nk, vk, dt
+    )
+    [X1, X2, X3] = SolveEuler(
+        X10, X20, X30, B1, B2, B3, A11, A12, A13, A21, A22, A23, A31, A32, A33, beta, Re, NBS, nd, nk, yita
+    )
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Solve: {time()-last_time}")
+        last_time = time()
+
+    ## ==========Results Reterive====
+    zn = np.zeros((Ng, nk))
+    Tg = scipy.sparse.block_diag([Phi, Phi, Phi, Phi, Phi, Phi]) @ X2
+    p = Phi @ X3
+    dV = dMu @ (beta / Re * D @ X1 + D @ X2 - G @ X3) * dt
+    deltV = scipy.sparse.block_diag([Phi, Phi, Phi]) @ dV
+    vtilda = vnew.flatten() + deltV
+    vnew = vtilda.reshape((Ng, 3))
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Results Reterive: {time()-last_time}")
+        last_time = time()
+
+    ## ==========Boundary Condition==========
+    for i in range(len(NBCv)):
+        boundary_index = NBCv[i]
+        if vnew[boundary_index][2] < 0:
+            vnew[boundary_index] = VBC[boundary_index]
+
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Boundary Condition: {time()-last_time}")
+        last_time = time()
+
+    ## ===== Grids to Particles=============
+    [xp, vp, Tp, pp] = maptopointsPC(Ng, Tg, xmin, nexyz, Np, xp, vp, icon, vnew, v, dx, dt, p, Fr, g)
+    v = vnew
+    if args.record_time and args.record_detail_time:
+        logging.info(f"Grids to Particles(RK4): {time()-last_time}")
+        # RK4_time_list.append(time() - last_time)
+        last_time = time()
+
+    ## ====Plot======
+    if args.record_time:
+        step_end_time = time()
+        step_time = step_end_time - step_start_time
+        step_time_list.append(step_time)
+        print(f"---\nstep: {step_num}, time: {(step_time)}")
+    else:
+        print(f"---\nstep: {step_num}")
+    if args.enable_plot:
+        plot_step(xp)
+    if args.save_results:
+        # xp_saved.append(xp)
+        np.savetxt(f"results/xp_{step_num}.txt", xp)
+    step_num += 1
+    return step_num, xp, vp, pp, Tp
 
 
 if __name__ == "__main__":
