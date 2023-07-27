@@ -22,4 +22,4 @@ for frame in range(num_frames):
         with open(outname, "w") as f:
             f.write(header)
             for i in range(xp.shape[0]):
-                f.write(f"{xp[i, 0]}\t{xp[i, 1]}\t{xp[i, 2]}\n")
+                f.write(f"{xp[i, 0]} {xp[i, 1]} {xp[i, 2]}\n")
