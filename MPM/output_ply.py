@@ -1,11 +1,14 @@
 import numpy as np
+from tqdm import trange
 
-num_frames = 200
-is_binary = False
+num_frames = 10
+is_binary = True
 
-for frame in range(num_frames):
-    xp = np.loadtxt(f"results/xp_{frame}.txt")
-    # xp = np.array(xp.T)
+for frame in trange(num_frames):
+    if is_binary:
+        xp = np.load(f"results/xp_{frame}.npy")
+    else:
+        xp = np.loadtxt(f"results/xp_{frame}.txt")
 
     num_points = xp.shape[0]
 

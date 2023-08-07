@@ -29,9 +29,9 @@ yb = 1
 za = 0
 zb = 1
 # z direction
-nx = 10
-ny = 10
-nz = 10
+nx = 20
+ny = 20
+nz = 20
 # elements at x-y-z directions
 Ne = nx * ny * nz
 # total elemennts

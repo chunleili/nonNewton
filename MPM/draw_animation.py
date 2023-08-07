@@ -3,11 +3,15 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
 num_frames = 200
+is_binary = True
 
 # 读取数据
 xps = []
 for frame in range(num_frames):
-    xp = np.loadtxt(f"results/xp_{frame}.txt")
+    if is_binary:
+        xp = np.load(f"results/xp_{frame}.npy")
+    else:
+        xp = np.loadtxt(f"results/xp_{frame}.txt")
     xps.append(xp)
 
 # 创建一个图像窗口

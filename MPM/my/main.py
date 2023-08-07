@@ -29,13 +29,14 @@ def main():
     # problem inputs
     ## ====plotting and saving====
     parser = argparse.ArgumentParser()
-    parser.add_argument("--save_results", type=int, default=0)
+    parser.add_argument("--save_results", type=int, default=1)
     parser.add_argument("--enable_plot", type=int, default=1)
-    parser.add_argument("--num_steps", type=int, default=200)
+    parser.add_argument("--num_steps", type=int, default=10)
     parser.add_argument("--record_time", type=int, default=1)
     parser.add_argument("--record_detail_time", type=int, default=0)
     parser.add_argument("--save_Tp", type=int, default=0)
     parser.add_argument("--save_vp", type=int, default=0)
+    parser.add_argument("--save_binary", type=int, default=1)
     args = parser.parse_args()
     if args.save_results or args.record_time:
         if not os.path.exists("results"):
@@ -86,6 +87,7 @@ def main():
     print("loop time used: ", program_end_time - loop_start_time)
     print("total time used: ", program_end_time - program_start_time)
     print("average step time used: ", avg_step)
+
     # if args.record_time and args.record_detail_time:
     #     avg_P2g = np.array(P2G_time_list).mean()
     #     avg_RK4 = np.array(RK4_time_list).mean()
@@ -98,7 +100,7 @@ def main():
     #     print("average massA2 time used: ", avg_massA2)
 
 
-def plot_step(xp, plot=True):
+def plot_step(xp, plot=True, step_num=0):
     if not plot:
         return
     plt.ion()
@@ -111,6 +113,7 @@ def plot_step(xp, plot=True):
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
     ax.set_box_aspect([2, 2, 1])
+    ax.text2D(0.05, 0.95, f"frame: {step_num}", transform=ax.transAxes)
     plt.show()
     plt.pause(0.01)
     plt.clf()
@@ -335,14 +338,20 @@ def step(args, xp, vp, pp, Tp, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, ste
     else:
         print(f"---\nstep: {step_num}")
     if args.enable_plot:
-        plot_step(xp)
+        plot_step(xp, step_num)
     if args.save_results:
-        # xp_saved.append(xp)
-        np.savetxt(f"results/xp_{step_num}.txt", xp)
-        if args.save_Tp:
-            np.savetxt(f"results/Tp_{step_num}.txt", Tp)
-        if args.save_vp:
-            np.savetxt(f"results/vp_{step_num}.txt", vp)
+        if args.save_binary:
+            np.save(f"results/xp_{step_num}.npy", xp)
+            if args.save_Tp:
+                np.save(f"results/Tp_{step_num}.npy", Tp)
+            if args.save_vp:
+                np.save(f"results/vp_{step_num}.npy", vp)
+        else:
+            np.savetxt(f"results/xp_{step_num}.txt", xp)
+            if args.save_Tp:
+                np.savetxt(f"results/Tp_{step_num}.txt", Tp)
+            if args.save_vp:
+                np.savetxt(f"results/vp_{step_num}.txt", vp)
     step_num += 1
     return step_num, xp, vp, pp, Tp
 
