@@ -1,7 +1,7 @@
 import numpy as np
 from tqdm import trange
 
-num_frames = 10
+num_frames = 200
 is_binary = True
 
 for frame in trange(num_frames):

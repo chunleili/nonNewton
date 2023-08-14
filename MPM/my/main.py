@@ -31,12 +31,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--save_results", type=int, default=1)
     parser.add_argument("--enable_plot", type=int, default=1)
-    parser.add_argument("--num_steps", type=int, default=10)
+    parser.add_argument("--num_steps", type=int, default=200)
     parser.add_argument("--record_time", type=int, default=1)
     parser.add_argument("--record_detail_time", type=int, default=0)
     parser.add_argument("--save_Tp", type=int, default=0)
     parser.add_argument("--save_vp", type=int, default=0)
-    parser.add_argument("--save_binary", type=int, default=1)
+    parser.add_argument("--save_npy", type=int, default=0)
+    parser.add_argument("--save_ply", type=int, default=1)
     args = parser.parse_args()
     if args.save_results or args.record_time:
         if not os.path.exists("results"):
@@ -329,6 +330,8 @@ def step(args, xp, vp, pp, Tp, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, ste
         # RK4_time_list.append(time() - last_time)
         last_time = time()
 
+    step_num += 1
+
     ## ====Plot======
     if args.record_time:
         step_end_time = time()
@@ -338,21 +341,34 @@ def step(args, xp, vp, pp, Tp, icon, Np, NBCv, VBC, G10, Mt0, Gx, Gy, Gz, M, ste
     else:
         print(f"---\nstep: {step_num}")
     if args.enable_plot:
-        plot_step(xp, step_num)
+        plot_step(xp, True, step_num)
     if args.save_results:
-        if args.save_binary:
+        # swap y z for output
+        xp[:, [1, 2]] = xp[:, [2, 1]]
+        if args.save_npy:
             np.save(f"results/xp_{step_num}.npy", xp)
             if args.save_Tp:
                 np.save(f"results/Tp_{step_num}.npy", Tp)
             if args.save_vp:
                 np.save(f"results/vp_{step_num}.npy", vp)
+        elif args.save_ply:
+            import plyfile
+
+            vertices = np.zeros(xp.shape[0], dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
+            vertices["x"] = xp[:, 0]
+            vertices["y"] = xp[:, 1]
+            vertices["z"] = xp[:, 2]
+            el = plyfile.PlyElement.describe(vertices, "vertex")
+            plyfile.PlyData([el]).write(f"results/xp_{step_num}.ply")
         else:
             np.savetxt(f"results/xp_{step_num}.txt", xp)
             if args.save_Tp:
                 np.savetxt(f"results/Tp_{step_num}.txt", Tp)
             if args.save_vp:
                 np.savetxt(f"results/vp_{step_num}.txt", vp)
-    step_num += 1
+        # swap back
+        xp[:, [1, 2]] = xp[:, [2, 1]]
+
     return step_num, xp, vp, pp, Tp
 
 
